@@ -51,6 +51,7 @@ def start_jail(name):
 def stop_jail(name):
     # XXX Who knows how this works?
     # os.system("/usr/local/etc/rc.d/ezjail.sh onestop %s" % (name,))
+    pass
 
 
 
