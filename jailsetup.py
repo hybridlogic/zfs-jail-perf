@@ -13,7 +13,7 @@ def check_zfs(fsname):
     lines, status = run_return("zfs list %s" % (fsname,))
     return not lines[0].startswith('cannot open')
 
-def initial_setup():
+def initial_setup(name):
     print "Please run ezjail-admin -b if you've not built a world yet...",
     print "proceeding in 5 seconds, press Ctrl-C to cancel."
     #time.sleep(5) # TODO put me back
@@ -22,7 +22,7 @@ def initial_setup():
         print "ZFS pool", ZPOOL, "doesn't exist, bailing."
         return
 
-    for fs in ['/jails', '/jails/basejail', '/jails/%s' % (JAIL_NAME,)]:
+    for fs in ['/jails', '/jails/basejail', '/jails/%s' % (name,)]:
         unified = ZPOOL + fs; fsmount = '/usr' + fs
         if not check_zfs(unified):
             print "Creating", unified
@@ -33,8 +33,14 @@ def initial_setup():
 
     print "Initialising basejail"
     os.system("ezjail-admin update")
-    os.system("ezjail-admin create -r /usr/jails/%s %s 127.0.1.1" % (JAIL_NAME, JAIL_NAME))
-    os.system("/usr/local/etc/rc.d/ezjail.sh onestart %s" % (JAIL_NAME,))
+    os.system("ezjail-admin create -r /usr/jails/%s %s 127.0.1.1" % (name, name))
+
+
+def start_jail(name):
+    os.system("/usr/local/etc/rc.d/ezjail.sh onestart %s" % (name,))
+
+def stop_jail(name):
+    os.system("/usr/local/etc/rc.d/ezjail.sh onestart %s" % (name,))
 
 if __name__ == "__main__":
     initial_setup()
