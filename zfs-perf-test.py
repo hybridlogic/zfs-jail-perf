@@ -145,14 +145,14 @@ class ZFSLoad(object):
             "zfs", "destroy", "%s/%s@%s" % (self.zpool, filesystem, name))
 
 
-    def _receive_snapshot(self, filesystem, onto, input_filename):
+    def _receive_snapshot(self, input_filename):
         fObj = open(input_filename, 'r')
         return subprocess.Popen(["zfs", "recv"], stdin=fObj)
 
 
     def start(self):
         # Replay the change log asynchronously
-        self.process = self._receive_snapshot('start', self._snapshot)
+        self.process = self._receive_snapshot(self._snapshot)
 
 
     def stop(self):
