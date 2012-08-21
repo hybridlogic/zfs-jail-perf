@@ -1,4 +1,4 @@
-import os, time
+import os, time, shlex
 
 def run_return(cmd):
     import commands
