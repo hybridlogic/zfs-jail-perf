@@ -36,11 +36,23 @@ def initial_setup(name):
     os.system("ezjail-admin create -r /usr/jails/%s %s 127.0.1.1" % (name, name))
 
 
+
 def start_jail(name):
     os.system("/usr/local/etc/rc.d/ezjail.sh onestart %s" % (name,))
+    jails = run_return("jls -h -q")
+    for info in jails:
+        parts = shlex.split(info)
+        if parts[8] == name:
+            return parts[5]
+    raise Exception("Could not determine jail id")
+
+
 
 def stop_jail(name):
-    os.system("/usr/local/etc/rc.d/ezjail.sh onestart %s" % (name,))
+    # XXX Who knows how this works?
+    # os.system("/usr/local/etc/rc.d/ezjail.sh onestop %s" % (name,))
+
+
 
 if __name__ == "__main__":
     initial_setup()

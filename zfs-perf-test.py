@@ -102,7 +102,7 @@ class Jail(object):
 
 
     def start(self):
-        jailsetup.start_jail(self.name)
+        self.id = jailsetup.start_jail(self.name)
 
 
     def stop(self):
@@ -212,13 +212,13 @@ def main():
 
     jail.start()
     try:
-        jail_read_measurements = measure_read_jail(jail.name, MEASUREMENTS)
-        jail_write_measurements = measure_write_jail(jail.name, MEASUREMENTS)
+        jail_read_measurements = measure_read_jail(jail.id, MEASUREMENTS)
+        jail_write_measurements = measure_write_jail(jail.id, MEASUREMENTS)
 
         load.start()
         try:
-            loaded_jail_read_measurements = measure_read_jail(jail.name, MEASUREMENTS)
-            loaded_jail_write_measurements = measure_write_jail(jail.name, MEASUREMENTS)
+            loaded_jail_read_measurements = measure_read_jail(jail.id, MEASUREMENTS)
+            loaded_jail_write_measurements = measure_write_jail(jail.id, MEASUREMENTS)
         finally:
             load.stop()
     finally:
