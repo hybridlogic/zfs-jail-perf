@@ -163,7 +163,7 @@ class ZFSLoad(object):
 
 def main():
     load = ZFSLoad('/hcfs', jailsetup.ZPOOL)
-    jail = Jail(jailsetup.JAIL_NAME)
+    jail = Jail("testjail-%d" % (randrange(2 ** 16),))
 
     read_measurements = [measure_read() for i in range(MEASUREMENTS)]
     write_measurements = [measure_write() for i in range(MEASUREMENTS)]
