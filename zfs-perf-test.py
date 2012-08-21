@@ -145,7 +145,9 @@ class ZFSLoad(object):
         fqfn = "%s/%s" % (self.zpool, self.filesystem)
         self._run("zfs", "create", fqfn)
         self._run(
-            "zfs", "set", "mountpoint=%s/%s" % (self.root, filesystem),
+            "zfs", "set",
+            "mountpoint=%s/%s" % (self.root, filesystem),
+            "atime=off",
             fqfn)
 
 
