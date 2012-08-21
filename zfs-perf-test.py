@@ -76,7 +76,8 @@ class Jail(object):
 
 
 class ZFSLoad(object):
-    def __init__(self, zpool):
+    def __init__(self, root, zpool):
+        self.root = root
         self.zpool = zpool
         # Create a new filesystem to play around with
         self.filesystem = 'zfs-perf-test-%d' % (randrange(2 ** 16),)
@@ -105,19 +106,19 @@ class ZFSLoad(object):
 
 
     def _create_filesystem(self, filesystem):
-        self._run("zfs", "create", "%s/%s" % (self.zpool, self.filesystem))
+        self._run("zfs", "create", "%s/%s" % (self.hpool, self.filesystem))
 
 
     def _create_snapshot(self, filesystem, name):
         self._run(
-            "zfs", "snapshot", "%s/%s@%s" % (self.zpool, filesystem, name))
+            "zfs", "snapshot", "%s/%s@%s" % (self.hpool, filesystem, name))
 
     def _create_changes(self, filesystem):
         pattern = (
             "she slit the sheet the sheet she slit and on the slitted sheet "
             "she sits.") * 64
         for i in range(2 ** 16):
-            fObj = open("%s/%s/data.%d" % (self.zpool, filesystem, i), "w")
+            fObj = open("%s/%s/data.%d" % (self.root, filesystem, i), "w")
             fObj.write(pattern)
             fObj.close()
             pattern = pattern[1:] + pattern[0]
@@ -157,7 +158,7 @@ class ZFSLoad(object):
 
 
 def main():
-    load = ZFSLoad(jailsetup.ZPOOL)
+    load = ZFSLoad('/hcfs', jailsetup.ZPOOL)
     jail = Jail(jailsetup.JAIL_NAME)
 
     read_measurements = [measure_read() for i in range(MEASUREMENTS)]
