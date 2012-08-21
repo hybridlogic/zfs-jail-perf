@@ -106,12 +106,12 @@ class ZFSLoad(object):
 
 
     def _create_filesystem(self, filesystem):
-        self._run("zfs", "create", "%s/%s" % (self.hpool, self.filesystem))
+        self._run("zfs", "create", "%s/%s" % (self.zpool, self.filesystem))
 
 
     def _create_snapshot(self, filesystem, name):
         self._run(
-            "zfs", "snapshot", "%s/%s@%s" % (self.hpool, filesystem, name))
+            "zfs", "snapshot", "%s/%s@%s" % (self.zpool, filesystem, name))
 
     def _create_changes(self, filesystem):
         pattern = (
