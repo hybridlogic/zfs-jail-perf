@@ -39,7 +39,7 @@ def initial_setup(name):
 
 def start_jail(name):
     os.system("/usr/local/etc/rc.d/ezjail.sh onestart %s" % (name,))
-    jails = run_return("jls -h -q")
+    jails, status = run_return("jls -h -q")
     for info in jails:
         parts = shlex.split(info)
         if parts[8] == name:
