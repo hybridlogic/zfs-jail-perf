@@ -106,7 +106,10 @@ class ZFSLoad(object):
 
 
     def _create_filesystem(self, filesystem):
-        self._run("zfs", "create", "%s/%s" % (self.zpool, self.filesystem))
+        fqfn = "%s/%s" % (self.zpool, self.filesystem)
+        self._run("zfs", "create", fqfn)
+        self._run(
+            "zfs", "set", fqfn, "mountpoint=%s/%s" % (self.root, filesystem))
 
 
     def _create_snapshot(self, filesystem, name):
