@@ -1,4 +1,6 @@
-import os, time, shlex
+import os
+#import time
+import shlex
 
 def run_return(cmd):
     import commands
@@ -8,6 +10,7 @@ def run_return(cmd):
 JAIL_NAME = 'testjail4'
 ZPOOL = 'hpool'
 ZFS = '%s/%s' % (ZPOOL, JAIL_NAME)
+FS_MOUNT_BASE = '/usr'
 
 def check_zfs(fsname):
     lines, status = run_return("zfs list %s" % (fsname,))
@@ -23,7 +26,7 @@ def initial_setup(name):
         return
 
     for fs in ['/jails', '/jails/basejail', '/jails/%s' % (name,)]:
-        unified = ZPOOL + fs; fsmount = '/usr' + fs
+        unified = ZPOOL + fs; fsmount = FS_MOUNT_BASE + fs
         if not check_zfs(unified):
             print "Creating", unified
             run_return("zfs create %(unified)s; zfs set mountpoint=%(fsmount)s %(unified)s" % 

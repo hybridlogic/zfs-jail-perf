@@ -15,13 +15,24 @@ import jailsetup
 MEASUREMENTS = 1000
 
 # Get a bunch of files from all over the place to use for future read load
+
 FILES = deque()
+"""
+# XXX These files should at least be *inside* the zfs pool.
 for dirpath, dirnames, filenames in os.walk('/'):
     for f in filenames:
         FILES.append(os.path.join(dirpath, f))
     if len(FILES) > 10000:
         break
+"""
 
+for x in range(1000):
+    tmpfilesbase = "/usr/jails/tmpfiles"
+    if not os.path.exists(tmpfilesbase):
+        os.mkdir(tmpfilesbase)
+    tmpfile = tmpfilesbase + '/' + str(x)
+    open(tmpfile, 'a').close() 
+    FILES.append(tmpfile)
 
 
 def check_output(*popenargs, **kwargs):
@@ -147,6 +158,9 @@ class ZFSLoad(object):
         self._run(
             "zfs", "set",
             "mountpoint=%s/%s" % (self.root, filesystem),
+            fqfn)
+        self._run(
+            "zfs", "set",
             "atime=off",
             fqfn)
 
@@ -185,13 +199,16 @@ class ZFSLoad(object):
 
     def _receive_snapshot(self, filesystem, input_filename):
         fObj = open(input_filename, 'r')
+        # Unmount the filesystem before receiving into it.
+        jailsetup.run_return("zfs umount %s/%s" % (self.zpool, filesystem))
         return subprocess.Popen([
-                "zfs", "recv", "-d", "%s/%s" % (self.zpool, filesystem)],
+                "zfs", "recv", "-F", "-d", "%s/%s" % (self.zpool, filesystem)],
                                 stdin=fObj)
 
 
     def start(self):
-        # Replay the change log asynchronously
+        # Replay the change log asynchronously; TODO measure how long this
+        # runs for, so we can be sure it runs for the duration of the test.
         self.process = self._receive_snapshot(
             self.filesystem, self._snapshot)
 
@@ -236,8 +253,8 @@ def main():
     print 'mean unloaded jail read time', mean(jail_read_measurements)
     print 'mean unloaded jail write time', mean(jail_write_measurements)
 
-    print 'mean loaded read time', mean(read_measurements)
-    print 'mean loaded write time', mean(write_measurements)
+    print 'mean loaded read time', mean(loaded_read_measurements)
+    print 'mean loaded write time', mean(loaded_write_measurements)
 
     print 'mean loaded jail read time', mean(loaded_jail_read_measurements)
     print 'mean loaded jail write time', mean(loaded_jail_write_measurements)
