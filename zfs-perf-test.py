@@ -12,20 +12,15 @@ from pickle import dump
 
 import jailsetup
 
-MEASUREMENTS = 1000
+TOUCH = "touch"
+STAT = "stat"
+
+MEASUREMENTS = 10000
+WARMUP_MEASUREMENTS = 1000
 
 # Get a bunch of files from all over the place to use for future read load
 
 FILES = deque()
-"""
-# XXX These files should at least be *inside* the zfs pool.
-for dirpath, dirnames, filenames in os.walk('/'):
-    for f in filenames:
-        FILES.append(os.path.join(dirpath, f))
-    if len(FILES) > 10000:
-        break
-"""
-
 for x in range(1000):
     tmpfilesbase = "/usr/jails/tmpfiles"
     if not os.path.exists(tmpfilesbase):
@@ -73,37 +68,66 @@ def mean(values):
     return sum(values) / len(values)
 
 
-def measure(f):
-    before = time()
-    f()
-    after = time()
-    return after - before
+
+def _parse_time(output):
+    # time output looks like this:
+    #     <program output>
+    # 0.000u 0.001s 0:00.00 0.0%      0+0k 0+0io 0pf+0w
+    # The default time format is `%Uu %Ss %E %P %X+%Dk %I+%Oio %Fpf+%Ww' 
+    # %U  The time the process spent in user mode in cpu seconds.
+    # %S  The time the process spent in kernel mode in cpu seconds.
+    # %E  The elapsed (wall clock) time in seconds.
+
+    measurement = output.splitlines()[-1]
+    parts = measurement.strip().split()
+    user = float(parts[0][:-1])
+    system = float(parts[1][:-1])
+    m, s = parts[2].split(':')
+    wall = int(m) * 60 + float(s)
+
+    return wall
+
 
 
 def measure_read():
     try:
-        return measure(lambda: os.stat(FILES[0]))
+        return _parse_time(check_output(["csh", "-c", "time %s %s" % (STAT, FILES[0])]))
     finally:
         FILES.rotate()
 
 
 
-def measure_read_jail(jail_id, samples):
-    output = check_output(["jexec", jail_id, "sh", "-c", "time stat /"])
-    print output
-    return [1.0]
-
-
-
 def measure_write():
-    return measure(lambda: open(mktemp(), 'a').close())
+    return _parse_time(check_output(["csh", "-c", "time %s %s" % (TOUCH, mktemp())]))
 
+
+
+def measure_read_jail(jail_id, samples):
+    # XXX Move the loop inside the jexec somehow
+    return [_parse_time(check_output(["jexec", jail_id, "csh", "-c", "time stat /"]))
+            for i in range(samples)]
+
+
+
+def _write_command(how_many):
+    return 'echo %s' % ("x" * how_many,)
 
 
 def measure_write_jail(jail_id, samples):
-    output = check_output(["jexec", jail_id, "sh", "-c", "touch /tmp/tmp12345"])
-    print output
-    return [2.0]
+    measure = "time %(cmd)s > /tmp/tmp%(id)s; tail -n 1 /tmp/tmp%(id)s"
+    loop = "foreach x ( %(words)s )\n  %(command)s\nend\n"
+    words = " ".join("x%d" % (i,) for i in range(samples))
+    csh = ["jexec", jail_id, "csh", "-c"]
+    command = csh + [loop % dict(
+            words=words,
+            command=measure % dict(
+                cmd=_write_command(10),
+                id=randrange(10000)))]
+    print 'Running', ' '.join(command)
+    output = check_output(command)
+    print 'Result', output
+    
+    return [_parse_time(line) for line in output.splitlines()]
 
 
 
@@ -214,8 +238,12 @@ class ZFSLoad(object):
 
 
     def stop(self):
-        # Stop whatever command is currently in progress
+        # Stop whatever command is currently in progress and wait for it to
+        # actually exit.
+        print "Killing and waiting.."
         self.process.kill()
+        self.process.wait()
+        print "Wait completed"
 
 
 
@@ -223,8 +251,14 @@ def main():
     load = ZFSLoad('/hcfs', jailsetup.ZPOOL)
     jail = Jail("testjail-%d" % (randrange(2 ** 16),))
 
+    print "STARTING UNLOADED TEST"
+
     read_measurements = [measure_read() for i in range(MEASUREMENTS)]
     write_measurements = [measure_write() for i in range(MEASUREMENTS)]
+
+    print "DONE UNLOADED TEST"
+
+    print "STARTING LOADED TEST"
 
     load.start()
     try:
@@ -233,31 +267,40 @@ def main():
     finally:
         load.stop()
 
+    print "DONE LOADED TEST"
+
+    print "STARTING JAIL TEST"
+
     jail.start()
     try:
         jail_read_measurements = measure_read_jail(jail.id, MEASUREMENTS)
         jail_write_measurements = measure_write_jail(jail.id, MEASUREMENTS)
 
+        print "DONE JAIL TEST"
+   
+        print "STARTING LOADED JAIL TEST"
         load.start()
         try:
             loaded_jail_read_measurements = measure_read_jail(jail.id, MEASUREMENTS)
             loaded_jail_write_measurements = measure_write_jail(jail.id, MEASUREMENTS)
         finally:
             load.stop()
+
+        print "DONE LOADED JAIL TEST"
     finally:
         jail.stop()
 
-    print 'mean unloaded read time', mean(read_measurements)
-    print 'mean unloaded write time', mean(write_measurements)
+    print 'mean unloaded read time', mean(read_measurements[WARMUP_MEASUREMENTS:])
+    print 'mean unloaded write time', mean(write_measurements[WARMUP_MEASUREMENTS:])
 
-    print 'mean unloaded jail read time', mean(jail_read_measurements)
-    print 'mean unloaded jail write time', mean(jail_write_measurements)
+    print 'mean loaded read time', mean(loaded_read_measurements[WARMUP_MEASUREMENTS:])
+    print 'mean loaded write time', mean(loaded_write_measurements[WARMUP_MEASUREMENTS:])
+    
+    print 'mean unloaded jail read time', mean(jail_read_measurements[WARMUP_MEASUREMENTS:])
+    print 'mean unloaded jail write time', mean(jail_write_measurements[WARMUP_MEASUREMENTS:])
 
-    print 'mean loaded read time', mean(loaded_read_measurements)
-    print 'mean loaded write time', mean(loaded_write_measurements)
-
-    print 'mean loaded jail read time', mean(loaded_jail_read_measurements)
-    print 'mean loaded jail write time', mean(loaded_jail_write_measurements)
+    print 'mean loaded jail read time', mean(loaded_jail_read_measurements[WARMUP_MEASUREMENTS:])
+    print 'mean loaded jail write time', mean(loaded_jail_write_measurements[WARMUP_MEASUREMENTS:])
 
     output = open('zfs-perf-test.pickle', 'w')
     dump(dict(
