@@ -91,10 +91,10 @@ def _parse_time(output):
 
 
 def measure_read():
-    before = time.time()
+    before = time()
     for i in range(10):
         os.stat(FILES[i])
-    after = time.time()
+    after = time()
     FILES.rotate(10)
     return after - before
 
@@ -102,10 +102,10 @@ def measure_read():
 
 def measure_write():
     filenames = [mktemp() for i in range(10)]
-    before = time.time()
+    before = time()
     for filename in filenames:
         open(filename, "a").close()
-    after = time.time()
+    after = time()
     return after - before
 
 
