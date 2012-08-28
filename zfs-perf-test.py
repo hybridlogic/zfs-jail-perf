@@ -27,7 +27,7 @@ for x in range(1000):
     if not os.path.exists(tmpfilesbase):
         os.mkdir(tmpfilesbase)
     tmpfile = tmpfilesbase + '/' + str(x)
-    open(tmpfile, 'a').close() 
+    open(tmpfile, 'a').close()
     FILES.append(tmpfile)
 
 
@@ -74,7 +74,7 @@ def _parse_time(output):
     # time output looks like this:
     #     <program output>
     # 0.000u 0.001s 0:00.00 0.0%      0+0k 0+0io 0pf+0w
-    # The default time format is `%Uu %Ss %E %P %X+%Dk %I+%Oio %Fpf+%Ww' 
+    # The default time format is `%Uu %Ss %E %P %X+%Dk %I+%Oio %Fpf+%Ww'
     # %U  The time the process spent in user mode in cpu seconds.
     # %S  The time the process spent in kernel mode in cpu seconds.
     # %E  The elapsed (wall clock) time in seconds.
@@ -278,7 +278,7 @@ def main():
         jail_write_measurements = measure_write_jail(jail.id, MEASUREMENTS)
 
         print "DONE JAIL TEST"
-   
+
         print "STARTING LOADED JAIL TEST"
         load.start()
         try:
@@ -296,7 +296,7 @@ def main():
 
     print 'mean loaded read time', mean(loaded_read_measurements[WARMUP_MEASUREMENTS:])
     print 'mean loaded write time', mean(loaded_write_measurements[WARMUP_MEASUREMENTS:])
-    
+
     print 'mean unloaded jail read time', mean(jail_read_measurements[WARMUP_MEASUREMENTS:])
     print 'mean unloaded jail write time', mean(jail_write_measurements[WARMUP_MEASUREMENTS:])
 
