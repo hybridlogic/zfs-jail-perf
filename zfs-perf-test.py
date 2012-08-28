@@ -119,7 +119,7 @@ def measure_read_jail(jail_id, samples):
             "for fName in sys.argv[1:]\n"
             "    os.stat(fName)\n"
             "after - time.time()\n"
-            "print after - before\n"] + FILES[:N])
+            "print after - before\n"] + [FILES[i] for i in range(N)])
     FILES.rotate(N)
     return float(output)
 
