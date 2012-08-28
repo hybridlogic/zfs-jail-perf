@@ -91,30 +91,36 @@ def _parse_time(output):
 
 
 def measure_read():
-    try:
-        before = time.time()
-        os.stat(FILES[0])
-        after = time.time()
-        return after - before
-    finally:
-        FILES.rotate()
+    before = time.time()
+    for i in range(10):
+        os.stat(FILES[i])
+    after = time.time()
+    FILES.rotate(10)
+    return after - before
 
 
 
 def measure_write():
-    return _parse_time(check_output(["csh", "-c", "time %s %s" % (TOUCH, mktemp())]))
+    filenames = [mktemp() for i in range(10)]
+    before = time.time()
+    for filename in filenames:
+        open(filename, "a").close()
+    after = time.time()
+    return after - before
 
 
 
 def measure_read_jail(jail_id, samples):
+    N = 10
     output = check_output([
             "jexec", jail_id, "python", "-c",
             "import os, time\n"
             "before = time.time()\n"
-            "for i in range(10):\n"
-            "    os.stat('/')\n"
+            "for fName in sys.argv[1:]\n"
+            "    os.stat(fName)\n"
             "after - time.time()\n"
-            "print after - before\n"])
+            "print after - before\n"] + FILES[:N])
+    FILES.rotate(N)
     return float(output)
 
 
@@ -122,12 +128,12 @@ def measure_read_jail(jail_id, samples):
 def measure_write_jail(jail_id, samples):
     output = check_output([
             "jexec", jail_id, "python", "-c",
-            "import time, random\n"
+            "import time, sys\n"
             "before = time.time()\n"
-            "for i in range(10):\n"
-            "    open('/tmp/tmp%d' % (random.randrange(10000),), 'a').close()\n"
+            "for filename in sys.argv[1:]:\n"
+            "    open(filename, 'a').close()\n"
             "after = time.time()\n"
-            "print after - before\n"])
+            "print after - before\n"] + [mktemp() for i in range(10)])
     return float(output)
 
 
