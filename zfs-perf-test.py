@@ -2,6 +2,7 @@
 from __future__ import division, unicode_literals, absolute_import
 
 import os.path
+import time
 import subprocess
 
 from random import randrange
@@ -91,7 +92,10 @@ def _parse_time(output):
 
 def measure_read():
     try:
-        return _parse_time(check_output(["csh", "-c", "time %s %s" % (STAT, FILES[0])]))
+        before = time.time()
+        os.stat(FILES[0])
+        after = time.time()
+        return after - before
     finally:
         FILES.rotate()
 
@@ -103,31 +107,28 @@ def measure_write():
 
 
 def measure_read_jail(jail_id, samples):
-    # XXX Move the loop inside the jexec somehow
-    return [_parse_time(check_output(["jexec", jail_id, "csh", "-c", "time stat /"]))
-            for i in range(samples)]
+    output = check_output([
+            "jexec", jail_id, "python", "-c",
+            "import os, time\n"
+            "before = time.time()\n"
+            "for i in range(10):\n"
+            "    os.stat('/')\n"
+            "after - time.time()\n"
+            "print after - before\n"])
+    return float(output)
 
-
-
-def _write_command(how_many):
-    return 'echo %s' % ("x" * how_many,)
 
 
 def measure_write_jail(jail_id, samples):
-    measure = "time %(cmd)s > /tmp/tmp%(id)s; tail -n 1 /tmp/tmp%(id)s"
-    loop = "foreach x ( %(words)s )\n  %(command)s\nend\n"
-    words = " ".join("x%d" % (i,) for i in range(samples))
-    csh = ["jexec", jail_id, "csh", "-c"]
-    command = csh + [loop % dict(
-            words=words,
-            command=measure % dict(
-                cmd=_write_command(10),
-                id=randrange(10000)))]
-    print 'Running', ' '.join(command)
-    output = check_output(command)
-    print 'Result', output
-    
-    return [_parse_time(line) for line in output.splitlines()]
+    output = check_output([
+            "jexec", jail_id, "python", "-c",
+            "import time, random\n"
+            "before = time.time()\n"
+            "for i in range(10):\n"
+            "    open('/tmp/tmp%d' % (random.randrange(10000),), 'a').close()\n"
+            "after = time.time()\n"
+            "print after - before\n"])
+    return float(output)
 
 
 
