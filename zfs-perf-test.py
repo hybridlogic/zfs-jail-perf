@@ -146,6 +146,7 @@ class Jail(object):
 
     def start(self):
         self.id = jailsetup.start_jail(self.name)
+        check_output(["jexec", self.id, "pkg_add", "-r", "python26"])
 
 
     def stop(self):
