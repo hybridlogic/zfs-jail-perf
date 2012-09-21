@@ -37,6 +37,7 @@ def initial_setup(name):
     print "Initialising basejail"
     os.system("ezjail-admin update")
     os.system("ezjail-admin create -r /usr/jails/%s %s 127.0.1.1" % (name, name))
+    os.system("cp python26.tbz /usr/jails/%s/" % (name,))
 
 
 
