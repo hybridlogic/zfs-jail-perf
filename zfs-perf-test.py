@@ -5,7 +5,7 @@ from __future__ import division, unicode_literals, absolute_import
 
 import os.path
 import subprocess
-from signal import SIGCHLD, SIG_DFL, signal
+from sys import stdout
 
 from random import randrange
 from time import time, ctime
@@ -13,11 +13,22 @@ from collections import deque
 from tempfile import mktemp
 from pickle import dump
 
+from twisted.internet import reactor
+from twisted.internet.threads import blockingCallFromThread
+from twisted.internet.protocol import ProcessProtocol
+from twisted.python.log import startLogging
+
 import jailsetup
 
 TOUCH = "touch"
 STAT = "stat"
-PYTHON = "/usr/local/bin/python"
+
+if False:
+    PYTHON = "/usr/bin/python"
+    TMP = "/tmp/jails/tmpfiles"
+else:
+    PYTHON = "/usr/local/bin/python"
+    TMP = "/usr/jails/tmpfiles"
 
 WARMUP_MEASUREMENTS = 1000
 MEASUREMENTS = WARMUP_MEASUREMENTS * 10
@@ -25,36 +36,15 @@ MEASUREMENTS = WARMUP_MEASUREMENTS * 10
 # Get a bunch of files from all over the place to use for future read load
 
 def check_output(*popenargs, **kwargs):
-    r"""Run command with arguments and return its output as a byte string.
-
-    If the exit code was non-zero it raises a CalledProcessError.  The
-    CalledProcessError object will have the return code in the returncode
-    attribute and output in the output attribute.
-
-    The arguments are the same as for the Popen constructor.  Example:
-
-    >>> check_output(["ls", "-l", "/dev/null"])
-    'crw-rw-rw- 1 root root 1, 3 Oct 18  2007 /dev/null\n'
-
-    The stdout argument is not allowed as it is used internally.
-    To capture standard error in the result, use stderr=STDOUT.
-
-    >>> check_output(["/bin/sh", "-c",
-    ...               "ls -l non_existent_file ; exit 0"],
-    ...              stderr=STDOUT)
-    'ls: non_existent_file: No such file or directory\n'
-    """
     if 'stdout' in kwargs:
         raise ValueError('stdout argument not allowed, it will be overridden.')
-    process = subprocess.Popen(stdout=subprocess.PIPE, *popenargs, **kwargs)
-    output, unused_err = process.communicate()
-    retcode = process.poll()
-    if retcode:
-        cmd = kwargs.get("args")
-        if cmd is None:
-            cmd = popenargs[0]
-        raise subprocess.CalledProcessError(retcode, cmd)
-    return output
+    try:
+        output = blockingCallFromThread(
+            reactor, getProcessOutput, popenargs[0], popenargs[1:])
+    except Exception, e:
+        print e
+    else:
+        return output
 
 
 
@@ -183,7 +173,7 @@ class Jail(object):
 
 
 
-class ZFSLoad(object):
+class ReplayLargeLoad(object):
     def __init__(self, root, zpool):
         self.root = root
         self.zpool = zpool
@@ -209,8 +199,38 @@ class ZFSLoad(object):
 
 
     def _run(self, *command, **kwargs):
-        result = subprocess.call(command, **kwargs)
-        print command, result
+        class Collector(ProcessProtocol):
+            finished = None
+
+            @classmethod
+            def run(cls, reactor, *argv, **kwargs):
+                proto = cls()
+                proto.finished = Deferred()
+                transport = reactor.spawnProcess(proto, argv, **kwargs)
+                return proto
+
+            def connectionMade(self):
+                self.out = []
+                self.err = []
+
+            def outReceived(self, data):
+                self.out.append(data)
+
+            def errReceived(self, data):
+                self.err.append(data)
+
+            def processEnded(self, reason):
+                self.endedReason = reason
+                self.finished.callback(self)
+
+        print "command:\t", command
+        proto = blockingCallFromThread(
+            reactor, Collector.run, reactor, argv=command)
+        if proto.out:
+            print "\toutput:\t", "".join(proto.out)
+        if proto.err:
+            print "\terrput:\t", "".join(proto.err)
+        print "\tended:\t", proto.endedReason.getErrorMessage()
 
 
     def _create_filesystem(self, filesystem):
@@ -248,7 +268,7 @@ class ZFSLoad(object):
             "zfs", "send", "-I",
             "%s/%s@%s" % (self.zpool, filesystem, start),
             "%s/%s@%s" % (self.zpool, filesystem, end),
-            stdout=fObj)
+            childFDs={0: 'w', 1: fObj.fileno(), 2: 'r'})
         fObj.close()
         return output_filename
 
@@ -262,13 +282,34 @@ class ZFSLoad(object):
         fObj = open(input_filename, 'r')
         # Unmount the filesystem before receiving into it.
         jailsetup.run_return("zfs umount %s/%s" % (self.zpool, filesystem))
-        return subprocess.Popen([
-                "zfs", "recv", "-F", "-d", "%s/%s" % (self.zpool, filesystem)],
-                                stdin=fObj)
+
+        class ReceiveProto(ProcessProtocol):
+            command = ["zfs", "recv", "-F", "-d", "%(zpool)s/%(filesystem)s"]
+
+            @classmethod
+            def run(cls, reactor):
+                proto = cls()
+                proto.finished = Deferred()
+                command = [arg % dict(zpool=self.zpool, filesystem=filesystem)
+                           for arg
+                           in cls.command]
+                transport = reactor.spawnProcess(proto, command)
+                return proto
+
+            def kill(self):
+                reactor.callFromThread(self.transport.signalProcess, "KILL")
+
+            def wait(self):
+                blockingCallFromThread(reactor, lambda: self.finished)
+
+            def processEnded(self, reason):
+                print ctime(), "Load ended!"
+                self.finished.callback(None)
+
+        return blockingCallFromThread(reactor, ReceiveProto.run, reactor)
 
 
     def start(self):
-        signal(SIGCHLD, self._sigchld)
         # Replay the change log asynchronously; TODO measure how long this
         # runs for, so we can be sure it runs for the duration of the test.
         print ctime(), 'Load started'
@@ -276,16 +317,10 @@ class ZFSLoad(object):
             self.filesystem, self._snapshot)
 
 
-    def _sigchld(self, *args):
-        print ctime(), 'Load ended?'
-
-
     def stop(self):
         # Stop whatever command is currently in progress and wait for it to
         # actually exit.
-        print ctime(), 'Load stopped'
-        signal(SIGCHLD, SIG_DFL)
-        print ctime(), "Killing and waiting.."
+        print ctime(), "Killing load and waiting.."
         self.process.kill()
         self.process.wait()
         print ctime(), "Wait completed"
@@ -300,9 +335,18 @@ def milli(seconds):
 
 
 def main():
-    load = ZFSLoad('/hcfs', jailsetup.ZPOOL)
+    startLogging(stdout)
+
+    load = ReplayLargeLoad('/hcfs', jailsetup.ZPOOL)
     jail = Jail("testjail-%d" % (randrange(2 ** 16),))
 
+    d = deferToThread(benchmark, load, jail)
+    d.addErrback(log.err, "Benchmark failed")
+    d.addBoth(lambda ignored: reactor.stop())
+    reactor.run()
+
+
+def benchmark(load, jail):
     print ctime(), "STARTING UNLOADED TEST"
 
     read_measurements = measure_read(MEASUREMENTS)
