@@ -14,14 +14,16 @@ from tempfile import mktemp
 from pickle import dump
 
 from twisted.internet import reactor
-from twisted.internet.threads import blockingCallFromThread
+from twisted.internet.defer import Deferred
+from twisted.internet.threads import deferToThread, blockingCallFromThread
 from twisted.internet.protocol import ProcessProtocol
-from twisted.python.log import startLogging
+from twisted.python.log import startLogging, err
 
 import jailsetup
 
 TOUCH = "touch"
 STAT = "stat"
+ZFS = "/sbin/zfs"
 
 if False:
     PYTHON = "/usr/bin/python"
@@ -206,8 +208,8 @@ class ReplayLargeLoad(object):
             def run(cls, reactor, *argv, **kwargs):
                 proto = cls()
                 proto.finished = Deferred()
-                transport = reactor.spawnProcess(proto, argv, **kwargs)
-                return proto
+                reactor.spawnProcess(proto, *argv, **kwargs)
+                return proto.finished
 
             def connectionMade(self):
                 self.out = []
@@ -225,7 +227,7 @@ class ReplayLargeLoad(object):
 
         print "command:\t", command
         proto = blockingCallFromThread(
-            reactor, Collector.run, reactor, argv=command)
+            reactor, Collector.run, reactor, command[0], command)
         if proto.out:
             print "\toutput:\t", "".join(proto.out)
         if proto.err:
@@ -235,20 +237,20 @@ class ReplayLargeLoad(object):
 
     def _create_filesystem(self, filesystem):
         fqfn = "%s/%s" % (self.zpool, self.filesystem)
-        self._run("zfs", "create", fqfn)
+        self._run(ZFS, "create", fqfn)
         self._run(
-            "zfs", "set",
+            ZFS, "set",
             "mountpoint=%s/%s" % (self.root, filesystem),
             fqfn)
         self._run(
-            "zfs", "set",
+            ZFS, "set",
             "atime=off",
             fqfn)
 
 
     def _create_snapshot(self, filesystem, name):
         self._run(
-            "zfs", "snapshot", "%s/%s@%s" % (self.zpool, filesystem, name))
+            ZFS, "snapshot", "%s/%s@%s" % (self.zpool, filesystem, name))
 
     def _create_changes(self, filesystem):
         pattern = (
@@ -265,7 +267,7 @@ class ReplayLargeLoad(object):
         output_filename = "%s_%s_%s" % (filesystem, start, end)
         fObj = open(output_filename, "w")
         self._run(
-            "zfs", "send", "-I",
+            ZFS, "send", "-I",
             "%s/%s@%s" % (self.zpool, filesystem, start),
             "%s/%s@%s" % (self.zpool, filesystem, end),
             childFDs={0: 'w', 1: fObj.fileno(), 2: 'r'})
@@ -275,7 +277,7 @@ class ReplayLargeLoad(object):
 
     def _destroy_snapshot(self, filesystem, name):
         self._run(
-            "zfs", "destroy", "%s/%s@%s" % (self.zpool, filesystem, name))
+            ZFS, "destroy", "%s/%s@%s" % (self.zpool, filesystem, name))
 
 
     def _receive_snapshot(self, filesystem, input_filename):
@@ -284,7 +286,7 @@ class ReplayLargeLoad(object):
         jailsetup.run_return("zfs umount %s/%s" % (self.zpool, filesystem))
 
         class ReceiveProto(ProcessProtocol):
-            command = ["zfs", "recv", "-F", "-d", "%(zpool)s/%(filesystem)s"]
+            command = [ZFS, "recv", "-F", "-d", "%(zpool)s/%(filesystem)s"]
 
             @classmethod
             def run(cls, reactor):
@@ -337,17 +339,19 @@ def milli(seconds):
 def main():
     startLogging(stdout)
 
-    load = ReplayLargeLoad('/hcfs', jailsetup.ZPOOL)
-    jail = Jail("testjail-%d" % (randrange(2 ** 16),))
-
-    d = deferToThread(benchmark, load, jail)
-    d.addErrback(log.err, "Benchmark failed")
+    print 'Starting benchmark'
+    d = deferToThread(benchmark)
+    d.addErrback(err, "Benchmark failed")
     d.addBoth(lambda ignored: reactor.stop())
+    print 'Running reactor'
     reactor.run()
 
 
-def benchmark(load, jail):
+def benchmark():
     print ctime(), "STARTING UNLOADED TEST"
+
+    load = ReplayLargeLoad('/hcfs', jailsetup.ZPOOL)
+    jail = Jail("testjail-%d" % (randrange(2 ** 16),))
 
     read_measurements = measure_read(MEASUREMENTS)
     write_measurements = measure_write(MEASUREMENTS)
