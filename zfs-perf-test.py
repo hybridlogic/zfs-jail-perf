@@ -12,7 +12,7 @@ from tempfile import mktemp
 from pickle import dump
 
 from twisted.internet import reactor
-from twisted.internet.defer import Deferred, succeed
+from twisted.internet.defer import Deferred
 from twisted.internet.utils import getProcessOutput
 from twisted.internet.error import ProcessDone
 from twisted.internet.threads import deferToThread, blockingCallFromThread
@@ -39,8 +39,6 @@ else:
 WARMUP_MEASUREMENTS = 1000
 MEASUREMENTS = WARMUP_MEASUREMENTS * 10
 
-# Get a bunch of files from all over the place to use for future read load
-
 def check_output(*popenargs, **kwargs):
     if 'stdout' in kwargs:
         raise ValueError('stdout argument not allowed, it will be overridden.')
@@ -52,6 +50,16 @@ def check_output(*popenargs, **kwargs):
     else:
         return output
 
+
+def _summarize(proto):
+    if proto.out:
+        print "\toutput:\t", b"".join(proto.out)[:80]
+    if proto.err:
+        print "\terrput:\t", b"".join(proto.err)[:80]
+    if proto.endedReason.check(ProcessDone):
+        print "\tended successfully"
+    else:
+        print "\tended:\t", proto.endedReason.getErrorMessage()
 
 
 def mean(values):
@@ -206,14 +214,7 @@ class ReplayLargeLoad(object):
 
         print "command:\t", command, kwargs
         proto = blockingCallFromThread(reactor, Collector.run, reactor)
-        if proto.out:
-            print "\toutput:\t", b"".join(proto.out)[:80]
-        if proto.err:
-            print "\terrput:\t", b"".join(proto.err)[:80]
-        if proto.endedReason.check(ProcessDone):
-            print "\tended successfully"
-        else:
-            print "\tended:\t", proto.endedReason.getErrorMessage()
+        _summarize(proto)
 
 
     def _create_filesystem(self, filesystem):
@@ -273,9 +274,21 @@ class ReplayLargeLoad(object):
                 command = [arg % dict(zpool=self.zpool, filesystem=filesystem)
                            for arg
                            in cls.command]
+
+                print "command:\t", command
                 reactor.spawnProcess(
                     proto, command, childFDs={0: proto.fObj.fileno(), 1: 'r', 2: 'r'})
                 return proto
+
+            def connectionMade(self):
+                self.out = []
+                self.err = []
+
+            def outReceived(self, data):
+                self.out.append(data)
+
+            def errReceived(self, data):
+                self.err.append(data)
 
             def kill(self):
                 reactor.callFromThread(self.transport.signalProcess, "KILL")
@@ -284,9 +297,13 @@ class ReplayLargeLoad(object):
                 blockingCallFromThread(reactor, lambda: self.finished)
 
             def processEnded(self, reason):
+                self.endedReason = reason
                 print ctime(), "Load ended!"
                 self.fObj.close()
-                self.finished.callback(None)
+
+                _summarize(self)
+
+                self.finished.callback(self)
 
         return ReceiveProto.run(reactor)
 
