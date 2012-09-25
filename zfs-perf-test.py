@@ -24,6 +24,9 @@ import jailsetup
 TOUCH = b"touch"
 STAT = b"stat"
 ZFS = b"/sbin/zfs"
+JEXEC = b"/usr/sbin/jexec"
+JLS = b"/usr/sbin/jls"
+PKG_ADD = b"/usr/sbin/pkg_add"
 
 if False:
     PYTHON = b"/usr/bin/python"
@@ -39,9 +42,7 @@ else:
 WARMUP_MEASUREMENTS = 1000
 MEASUREMENTS = WARMUP_MEASUREMENTS * 10
 
-def check_output(*popenargs, **kwargs):
-    if 'stdout' in kwargs:
-        raise ValueError('stdout argument not allowed, it will be overridden.')
+def check_output(popenargs):
     try:
         output = blockingCallFromThread(
             reactor, getProcessOutput, popenargs[0], popenargs[1:])
@@ -107,7 +108,7 @@ def measure_write(samples):
 
 def measure_read_jail(jail_id, samples):
     output = check_output([
-            b"jls", b"-j", jail_id, b"-h"])
+            JLS, b"-j", jail_id, b"-h"])
     path = output.splitlines()[1].split()[8]
     FILES = []
     for x in range(samples):
@@ -116,7 +117,7 @@ def measure_read_jail(jail_id, samples):
         FILES.append(str(x))
 
     output = check_output([
-            b"jexec", jail_id, PYTHON, b"-c",
+            JEXEC, jail_id, PYTHON, b"-c",
             b"def measure():\n"
             b"    import sys, os, time\n"
             b"    stat = os.stat\n"
@@ -134,7 +135,7 @@ def measure_read_jail(jail_id, samples):
 
 def measure_write_jail(jail_id, samples):
     output = check_output([
-            b"jexec", jail_id, PYTHON, b"-c",
+            JEXEC, jail_id, PYTHON, b"-c",
             b"def measure():\n"
             b"    import time, sys\n"
             b"    times = []\n"
@@ -157,7 +158,7 @@ class Jail(object):
 
     def start(self):
         self.id = jailsetup.start_jail(self.name)
-        check_output([b"jexec", self.id, b"pkg_add", b"python26.tbz"])
+        check_output([JEXEC, self.id, PKG_ADD, b"python26.tbz"])
 
 
     def stop(self):
@@ -379,14 +380,13 @@ def main():
 
 
 def benchmark():
-    print ctime(), "STARTING UNLOADED TEST"
-
+    print 'Initializing...'
     load = ReplayLargeLoad(b'/hcfs', jailsetup.ZPOOL)
     jail = Jail(b"testjail-%d" % (randrange(2 ** 16),))
 
+    print ctime(), "STARTING UNLOADED TEST"
     read_measurements = measure_read(MEASUREMENTS)
     write_measurements = measure_write(MEASUREMENTS)
-
     print ctime(), "DONE UNLOADED TEST"
 
     print ctime(), "STARTING LOADED TEST"
