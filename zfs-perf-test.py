@@ -208,9 +208,9 @@ class ReplayLargeLoad(object):
         proto = blockingCallFromThread(
             reactor, Collector.run, reactor, command[0], command)
         if proto.out:
-            print "\toutput:\t", "".join(proto.out)
+            print "\toutput:\t", b"".join(proto.out)
         if proto.err:
-            print "\terrput:\t", "".join(proto.err)
+            print "\terrput:\t", b"".join(proto.err)
         print "\tended:\t", proto.endedReason.getErrorMessage()
 
 
