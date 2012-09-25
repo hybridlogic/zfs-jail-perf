@@ -211,7 +211,10 @@ class ReplayLargeLoad(object):
             print "\toutput:\t", b"".join(proto.out)[:80]
         if proto.err:
             print "\terrput:\t", b"".join(proto.err)[:80]
-        print "\tended:\t", proto.endedReason.getErrorMessage()
+        if proto.endedReason.check(ProcessDone):
+            print "\tended successfully"
+        else:
+            print "\tended:\t", proto.endedReason.getErrorMessage()
 
 
     def _create_filesystem(self, filesystem):
