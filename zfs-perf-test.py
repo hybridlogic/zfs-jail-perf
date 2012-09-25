@@ -277,7 +277,7 @@ class ReplayLargeLoad(object):
 
                 print "command:\t", command
                 reactor.spawnProcess(
-                    proto, command, childFDs={0: proto.fObj.fileno(), 1: 'r', 2: 'r'})
+                    proto, command[0], command, childFDs={0: proto.fObj.fileno(), 1: 'r', 2: 'r'})
                 return proto
 
             def connectionMade(self):
