@@ -55,7 +55,7 @@ def _summarize(proto):
     if proto.out:
         print "\toutput:\t", b"".join(proto.out)[:80]
     if proto.err:
-        print "\terrput:\t", b"".join(proto.err)[:80]
+        print "\terrput:\t", b"".join(proto.err)[:800]
     if proto.endedReason.check(ProcessDone):
         print "\tended successfully"
     else:
