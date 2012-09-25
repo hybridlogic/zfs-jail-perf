@@ -21,16 +21,16 @@ from twisted.python.log import startLogging, err
 
 import jailsetup
 
-TOUCH = "touch"
-STAT = "stat"
-ZFS = "/sbin/zfs"
+TOUCH = b"touch"
+STAT = b"stat"
+ZFS = b"/sbin/zfs"
 
 if False:
-    PYTHON = "/usr/bin/python"
-    TMP = "/tmp/jails/tmpfiles"
+    PYTHON = b"/usr/bin/python"
+    TMP = b"/tmp/jails/tmpfiles"
 else:
-    PYTHON = "/usr/local/bin/python"
-    TMP = "/usr/jails/tmpfiles"
+    PYTHON = b"/usr/local/bin/python"
+    TMP = b"/usr/jails/tmpfiles"
 
 WARMUP_MEASUREMENTS = 1000
 MEASUREMENTS = WARMUP_MEASUREMENTS * 10
@@ -55,26 +55,6 @@ def mean(values):
 
 
 
-def _parse_time(output):
-    # time output looks like this:
-    #     <program output>
-    # 0.000u 0.001s 0:00.00 0.0%      0+0k 0+0io 0pf+0w
-    # The default time format is `%Uu %Ss %E %P %X+%Dk %I+%Oio %Fpf+%Ww'
-    # %U  The time the process spent in user mode in cpu seconds.
-    # %S  The time the process spent in kernel mode in cpu seconds.
-    # %E  The elapsed (wall clock) time in seconds.
-
-    measurement = output.splitlines()[-1]
-    parts = measurement.strip().split()
-    user = float(parts[0][:-1])
-    system = float(parts[1][:-1])
-    m, s = parts[2].split(':')
-    wall = int(m) * 60 + float(s)
-
-    return wall
-
-
-
 def _initialize_for_read(tmpfile):
     fObj = open(tmpfile, 'w')
     fObj.write(b''.join(chr(i) for i in range(255)) * 255)
@@ -85,10 +65,9 @@ def _initialize_for_read(tmpfile):
 def measure_read(samples):
     FILES = []
     for x in range(samples):
-        tmpfilesbase = "/usr/jails/tmpfiles"
-        if not os.path.exists(tmpfilesbase):
-            os.mkdir(tmpfilesbase)
-        tmpfile = tmpfilesbase + '/' + str(x)
+        if not os.path.exists(TMP):
+            os.mkdir(TMP)
+        tmpfile = TMP + b'/' + bytes(x)
         _initialize_for_read(tmpfile)
         FILES.append(tmpfile)
 
@@ -117,44 +96,44 @@ def measure_write(samples):
 
 def measure_read_jail(jail_id, samples):
     output = check_output([
-            "jls", "-j", jail_id, "-h"])
+            b"jls", b"-j", jail_id, b"-h"])
     path = output.splitlines()[1].split()[8]
     FILES = []
     for x in range(samples):
-        tmpfile = path + '/' + str(x)
+        tmpfile = path + b'/' + bytes(x)
         _initialize_for_read(tmpfile)
         FILES.append(str(x))
 
     output = check_output([
-            "jexec", jail_id, PYTHON, "-c",
-            "def measure():\n"
-            "    import sys, os, time\n"
-            "    stat = os.stat\n"
-            "    times = []\n"
-            "    for fName in sys.argv[1:]:\n"
-            "        before = time.time()\n"
-            "        open(fName).read()\n"
-            "        after = time.time()\n"
-            "        times.append(after - before)\n"
-            "    print times\n"
-            "measure()\n"] + FILES)
+            b"jexec", jail_id, PYTHON, b"-c",
+            b"def measure():\n"
+            b"    import sys, os, time\n"
+            b"    stat = os.stat\n"
+            b"    times = []\n"
+            b"    for fName in sys.argv[1:]:\n"
+            b"        before = time.time()\n"
+            b"        open(fName).read()\n"
+            b"        after = time.time()\n"
+            b"        times.append(after - before)\n"
+            b"    print times\n"
+            b"measure()\n"] + FILES)
     return eval(output)
 
 
 
 def measure_write_jail(jail_id, samples):
     output = check_output([
-            "jexec", jail_id, PYTHON, "-c",
-            "def measure():\n"
-            "    import time, sys\n"
-            "    times = []\n"
-            "    for filename in sys.argv[1:]:\n"
-            "        before = time.time()\n"
-            "        open(filename, 'a').close()\n"
-            "        after = time.time()\n"
-            "        times.append(after - before)\n"
-            "    print times\n"
-            "measure()\n"] + [mktemp() for i in range(samples)])
+            b"jexec", jail_id, PYTHON, b"-c",
+            b"def measure():\n"
+            b"    import time, sys\n"
+            b"    times = []\n"
+            b"    for filename in sys.argv[1:]:\n"
+            b"        before = time.time()\n"
+            b"        open(filename, 'a').close()\n"
+            b"        after = time.time()\n"
+            b"        times.append(after - before)\n"
+            b"    print times\n"
+            b"measure()\n"] + [mktemp() for i in range(samples)])
     return eval(output)
 
 
@@ -167,7 +146,7 @@ class Jail(object):
 
     def start(self):
         self.id = jailsetup.start_jail(self.name)
-        check_output(["jexec", self.id, "pkg_add", "python26.tbz"])
+        check_output([b"jexec", self.id, b"pkg_add", b"python26.tbz"])
 
 
     def stop(self):
@@ -180,24 +159,24 @@ class ReplayLargeLoad(object):
         self.root = root
         self.zpool = zpool
         # Create a new filesystem to play around with
-        self.filesystem = 'zfs-perf-test-%d' % (randrange(2 ** 16),)
+        self.filesystem = b'zfs-perf-test-%d' % (randrange(2 ** 16),)
         self._create_filesystem(self.filesystem)
 
         # Take a snapshot of that filesystem to later replay onto
-        self._create_snapshot(self.filesystem, 'start')
+        self._create_snapshot(self.filesystem, b'start')
 
         # Make some changes so we have a sizable change log to replay
         self._create_changes(self.filesystem)
 
         # Take the new snapshot
-        self._create_snapshot(self.filesystem, 'end')
+        self._create_snapshot(self.filesystem, b'end')
 
         # Record the changes into a file to replay from
         self._snapshot = self._record_changes(
-            self.filesystem, 'start', 'end')
+            self.filesystem, b'start', b'end')
 
         # Get rid of the changes so we can replay them
-        self._destroy_snapshot(self.filesystem, 'end')
+        self._destroy_snapshot(self.filesystem, b'end')
 
 
     def _run(self, *command, **kwargs):
@@ -236,40 +215,40 @@ class ReplayLargeLoad(object):
 
 
     def _create_filesystem(self, filesystem):
-        fqfn = "%s/%s" % (self.zpool, self.filesystem)
-        self._run(ZFS, "create", fqfn)
+        fqfn = b"%s/%s" % (self.zpool, self.filesystem)
+        self._run(ZFS, b"create", fqfn)
         self._run(
-            ZFS, "set",
-            "mountpoint=%s/%s" % (self.root, filesystem),
+            ZFS, b"set",
+            b"mountpoint=%s/%s" % (self.root, filesystem),
             fqfn)
         self._run(
-            ZFS, "set",
-            "atime=off",
+            ZFS, b"set",
+            b"atime=off",
             fqfn)
 
 
     def _create_snapshot(self, filesystem, name):
         self._run(
-            ZFS, "snapshot", "%s/%s@%s" % (self.zpool, filesystem, name))
+            ZFS, b"snapshot", b"%s/%s@%s" % (self.zpool, filesystem, name))
 
     def _create_changes(self, filesystem):
         pattern = (
-            "she slit the sheet the sheet she slit and on the slitted sheet "
-            "she sits.") * 64
+            b"she slit the sheet the sheet she slit and on the slitted sheet "
+            b"she sits.") * 64
         for i in range(2 ** 16):
-            fObj = open("%s/%s/data.%d" % (self.root, filesystem, i), "w")
+            fObj = open(b"%s/%s/data.%d" % (self.root, filesystem, i), "w")
             fObj.write(pattern)
             fObj.close()
             pattern = pattern[1:] + pattern[0]
 
 
     def _record_changes(self, filesystem, start, end):
-        output_filename = "%s_%s_%s" % (filesystem, start, end)
+        output_filename = b"%s_%s_%s" % (filesystem, start, end)
         fObj = open(output_filename, "w")
         self._run(
-            ZFS, "send", "-I",
-            "%s/%s@%s" % (self.zpool, filesystem, start),
-            "%s/%s@%s" % (self.zpool, filesystem, end),
+            ZFS, b"send", b"-I",
+            b"%s/%s@%s" % (self.zpool, filesystem, start),
+            b"%s/%s@%s" % (self.zpool, filesystem, end),
             childFDs={0: 'w', 1: fObj.fileno(), 2: 'r'})
         fObj.close()
         return output_filename
@@ -277,16 +256,16 @@ class ReplayLargeLoad(object):
 
     def _destroy_snapshot(self, filesystem, name):
         self._run(
-            ZFS, "destroy", "%s/%s@%s" % (self.zpool, filesystem, name))
+            ZFS, b"destroy", b"%s/%s@%s" % (self.zpool, filesystem, name))
 
 
     def _receive_snapshot(self, filesystem, input_filename):
         fObj = open(input_filename, 'r')
         # Unmount the filesystem before receiving into it.
-        jailsetup.run_return("zfs umount %s/%s" % (self.zpool, filesystem))
+        jailsetup.run_return(b"%s umount %s/%s" % (ZFS, self.zpool, filesystem))
 
         class ReceiveProto(ProcessProtocol):
-            command = [ZFS, "recv", "-F", "-d", "%(zpool)s/%(filesystem)s"]
+            command = [ZFS, b"recv", b"-F", b"-d", b"%(zpool)s/%(filesystem)s"]
 
             @classmethod
             def run(cls, reactor):
@@ -327,7 +306,7 @@ class ReplayLargeLoad(object):
         self.process.wait()
         print ctime(), "Wait completed"
         # Delete the snapshot so we can receive it again.
-        self._destroy_snapshot(self.filesystem, 'end')
+        self._destroy_snapshot(self.filesystem, b'end')
 
 
 
@@ -350,8 +329,8 @@ def main():
 def benchmark():
     print ctime(), "STARTING UNLOADED TEST"
 
-    load = ReplayLargeLoad('/hcfs', jailsetup.ZPOOL)
-    jail = Jail("testjail-%d" % (randrange(2 ** 16),))
+    load = ReplayLargeLoad(b'/hcfs', jailsetup.ZPOOL)
+    jail = Jail(b"testjail-%d" % (randrange(2 ** 16),))
 
     read_measurements = measure_read(MEASUREMENTS)
     write_measurements = measure_write(MEASUREMENTS)
@@ -402,7 +381,7 @@ def benchmark():
     print 'mean loaded jail read time', milli(mean(loaded_jail_read_measurements[WARMUP_MEASUREMENTS:]))
     print 'mean loaded jail write time', milli(mean(loaded_jail_write_measurements[WARMUP_MEASUREMENTS:]))
 
-    output = open('zfs-perf-test.pickle', 'w')
+    output = open(b'zfs-perf-test.pickle', 'w')
     dump(dict(
             read_measurements=read_measurements,
             write_measurements=write_measurements,
