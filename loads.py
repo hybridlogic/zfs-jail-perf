@@ -31,17 +31,14 @@ def _summarize(proto):
 class BaseLoad(object):
     tag = 'zfs-perf-test'
 
-    def __init__(self, root, zpool, benchmarkFilesystem):
+    def __init__(self, root, zpool):
         """
         @param root: A string giving the root path of the zpool to benchmark in.
 
         @param zpool: The zfs pool name to benchmark in.
-
-        @param benchmarkFilesystem: The name of the filesystem being benchmarked.
         """
         self.root = root
         self.zpool = zpool
-        self.benchmarkFilesystem = benchmarkFilesystem
         self.filesystem = b'%s-%d' % (self.tag, randrange(2 ** 16),)
         self.cooperativeTask = None
         self._stopFlag = False
@@ -73,7 +70,10 @@ class BaseLoad(object):
         return 1
 
 
-    def start(self):
+    def start(self, benchmarkFilesystem):
+        """
+        @param benchmarkFilesystem: The name of the filesystem being benchmarked.
+        """
         # Runs in reactor thread.  Return a Deferred that fires when
         # load is started.  Load runs until stop is called.
         pass
@@ -226,7 +226,7 @@ class RenameFilesystemLoad(BaseLoad):
     tag = 'zfs-rename-test'
 
     @inlineCallbacks
-    def start(self):
+    def start(self, benchmarkFilesystem):
         """
         Return a C{Deferred} which fires when the filesystem is created.
         """
@@ -269,7 +269,7 @@ class PruneSnapshots(BaseLoad):
         self.snaphotCounter += 1
 
     @inlineCallbacks
-    def start(self):
+    def start(self, benchmarkFilesystem):
         yield self._create_filesystem(self.filesystem)
         self.snapshots = []
         self.snapshotCounter = 0
@@ -298,7 +298,7 @@ class LotsOfTinySnapshots(BaseLoad):
     
     """
     @inlineCallbacks
-    def start(self):
+    def start(self, benchmarkFilesystem):
         # Get rid of any leftovers from previous runs
         yield self._destroy_filesystem(self.filesystem)
         yield self._create_filesystem(self.filesystem)
@@ -354,7 +354,8 @@ class SnapshotUsedFilesystemLoad(BaseLoad):
         return self._create_snapshot(self.benchmarkFilesystem, bytes(self._iteration))
         
 
-    def start(self):
+    def start(self, benchmarkFilesystem):
+        self.benchmarkFilesystem = benchmarkFilesystem
         self._task = self._startCooperativeTask()
         return succeed(None)
 
@@ -374,7 +375,7 @@ class ReplayLargeLoad(BaseLoad):
 
 
     @inlineCallbacks
-    def start(self):
+    def start(self, benchmarkFilesystem):
         self._stopLoad = False
 
         # Get rid of any leftovers from previous runs

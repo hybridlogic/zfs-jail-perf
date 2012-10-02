@@ -174,8 +174,8 @@ class ParallelLoad(object):
     def __init__(self, loads):
         self.loads = loads
 
-    def start(self):
-        return gatherResults([load.start() for load in self.loads])
+    def start(self, benchmarkFilesystem):
+        return gatherResults([load.start(benchmarkFilesystem) for load in self.loads])
 
 
     def stop(self):
@@ -188,10 +188,13 @@ def main(argv):
 
     if len(argv) == 0:
         argv = [b"ReplayLargeLoad"]
-    load = ParallelLoad([getattr(loads, arg)(b'/hcfs', jailsetup.ZPOOL) for arg in argv])
+    load = ParallelLoad([
+            getattr(loads, arg)(b'/hcfs', jailsetup.ZPOOL)
+            for arg in argv])
+    jail = Jail(b"testjail-%d" % (randrange(2 ** 16),))
 
     print 'Starting benchmark'
-    d = deferToThread(benchmark, load)
+    d = deferToThread(benchmark, load, jail)
     d.addErrback(err, "Benchmark failed")
     d.addBoth(lambda ignored: reactor.stop())
     print 'Running reactor'
@@ -213,10 +216,10 @@ class Blocking(object):
 
 
 
-def benchmark(load):
+def benchmark(load, jail):
     print 'Initializing...'
     load = Blocking(load)
-    jail = Blocking(Jail(b"testjail-%d" % (randrange(2 ** 16),)))
+    jail = Blocking(jail)
 
     print ctime(), "STARTING UNLOADED TEST"
     read_measurements = measure_read(MEASUREMENTS)
@@ -225,7 +228,7 @@ def benchmark(load):
 
     print ctime(), "STARTING LOADED TEST"
 
-    load.start()
+    load.start(benchmarkFilesystem=b'/')
     try:
         loaded_read_measurements = measure_read(MEASUREMENTS)
         loaded_write_measurements = measure_write(MEASUREMENTS)
@@ -244,7 +247,7 @@ def benchmark(load):
         print ctime(), "DONE JAIL TEST"
 
         print ctime(), "STARTING LOADED JAIL TEST"
-        load.start()
+        load.start(benchmarkFilesystem=b"/usr/jails/" + jail.name)
         try:
             loaded_jail_read_measurements = measure_read_jail(jail.id, MEASUREMENTS)
             loaded_jail_write_measurements = measure_write_jail(jail.id, MEASUREMENTS)
