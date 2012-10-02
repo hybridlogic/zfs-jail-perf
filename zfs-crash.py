@@ -1,10 +1,6 @@
 
 # send - filesystem, snapshots
-# recv - same filesystem
-# recv - not-exist
 # rollback - filesystem, snapshots
-# rename - filesystem
-# snapshot - filesystem
 # destroy a snapshot - filesystem, snapshot
 
 # zfs list -t filesystem -r -H -o name,used hpool/hcfs

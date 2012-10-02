@@ -12,7 +12,7 @@ from tempfile import mktemp
 from pickle import dump
 
 from twisted.internet import reactor
-from twisted.internet.defer import Deferred
+from twisted.internet.defer import Deferred, inlineCallbacks, returnValue
 from twisted.internet.utils import getProcessOutput
 from twisted.internet.error import ProcessDone
 from twisted.internet.threads import deferToThread, blockingCallFromThread
@@ -20,6 +20,7 @@ from twisted.internet.protocol import ProcessProtocol
 from twisted.python.log import startLogging, err
 
 import jailsetup
+from loads import LARGE_MODE, BaseLoad
 
 TOUCH = b"touch"
 STAT = b"stat"
@@ -28,15 +29,13 @@ JEXEC = b"/usr/sbin/jexec"
 JLS = b"/usr/sbin/jls"
 PKG_ADD = b"/usr/sbin/pkg_add"
 
-if True:
+if LARGE_MODE:
     PYTHON = b"/usr/bin/python"
     TMP = b"/tmp/jails/tmpfiles"
-    CHANGE_FILES_COUNT = 2 ** 20
     READ_FILES_FACTOR = 255
 else:
     PYTHON = b"/usr/local/bin/python"
     TMP = b"/usr/jails/tmpfiles"
-    CHANGE_FILES_COUNT = 2 ** 8
     READ_FILES_FACTOR = 2
 
 WARMUP_MEASUREMENTS = 1000
@@ -156,191 +155,130 @@ class Jail(object):
         jailsetup.initial_setup(self.name)
 
 
+    @inlineCallbacks
     def start(self):
-        self.id = jailsetup.start_jail(self.name)
-        check_output([JEXEC, self.id, PKG_ADD, b"python26.tbz"])
+        self.id = yield deferToThread(jailsetup.start_jail, self.name)
+        yield getProcessOutput(JEXEC, [self.id, PKG_ADD, b"python26.tbz"])
 
 
     def stop(self):
-        jailsetup.stop_jail(self.name)
+        return deferToThread(jailsetup.stop_jail, self.name)
 
 
 
-class ReplayLargeLoad(object):
-    def __init__(self, root, zpool):
-        self.root = root
-        self.zpool = zpool
-        # Create a new filesystem to play around with
-        self.filesystem = b'zfs-perf-test-%d' % (randrange(2 ** 16),)
-        self._create_filesystem(self.filesystem)
-
-        # Take a snapshot of that filesystem to later replay onto
-        self._create_snapshot(self.filesystem, b'start')
-
-        # Make some changes so we have a sizable change log to replay
-        self._create_changes(self.filesystem)
-
-        # Take the new snapshot
-        self._create_snapshot(self.filesystem, b'end')
-
-        # Record the changes into a file to replay from
-        self._snapshot = self._record_changes(
-            self.filesystem, b'start', b'end')
+# recv - other filesystem - small case
+class LotsOfTinySnapshots(BaseLoad):
+    """
+    
+    """
+    def _oneStep(self):
+        pass
 
 
-    def _run(self, *command, **kwargs):
-        class Collector(ProcessProtocol):
-            finished = None
+    @inlineCallbacks
+    def start(self):
+        # Get rid of any leftovers from previous runs
+        yield self._destroy_filesystem(self.filesystem)
+        yield self._create_filesystem(self.filesystem)
 
-            @classmethod
-            def run(cls, reactor):
-                proto = cls()
-                proto.finished = Deferred()
-                reactor.spawnProcess(proto, command[0], command, **kwargs)
-                return proto.finished
+        self.snapshots_for_replay = []
+        snapshot_base = b"%s_%%s_%%s" % (self.filesystem,)
 
-            def connectionMade(self):
-                self.out = []
-                self.err = []
+        # Generate a bunch of snapshots to later replay
+        previous = b'0'
+        self._create_snapshot(self.filesystem, previous)
+        for i in range(1, 100):
+            # Stuff some bytes into it to make the snapshot interesting
+            self._create_changes(self.filesystem)
+            # Take the snapshot
+            yield self._create_snapshot(self.filesystem, bytes(i))
+            # Dump it into a file for later replay
+            snapshot = snapshot_base % (previous, i)
+            self._record_changes(snapshot, bytes(previous), bytes(i))
+            previous = i
+            self.snapshots_for_replay.append(snapshot)
 
-            def outReceived(self, data):
-                self.out.append(data)
+        # Delete all of the snapshots just taken
+        for i in range(100):
+            self._destroy_snapshot(self.filesystem, bytes(i))
 
-            def errReceived(self, data):
-                self.err.append(data)
+        # Save a list of all the snapshots we took
+        self.snapshots = self.snapshots_for_replay[:]
 
-            def processEnded(self, reason):
-                self.endedReason = reason
-                self.finished.callback(self)
-
-        print "command:\t", command, kwargs
-        proto = blockingCallFromThread(reactor, Collector.run, reactor)
-        _summarize(proto)
-
-
-    def _create_filesystem(self, filesystem):
-        fqfn = b"%s/%s" % (self.zpool, self.filesystem)
-        self._run(ZFS, b"create", fqfn)
-        self._run(
-            ZFS, b"set",
-            b"mountpoint=%s/%s" % (self.root, filesystem),
-            fqfn)
-        self._run(
-            ZFS, b"set",
-            b"atime=off",
-            fqfn)
+        # Start the process of replaying them
+        self._startCooperativeTask()
 
 
-    def _create_snapshot(self, filesystem, name):
-        self._run(
-            ZFS, b"snapshot", b"%s/%s@%s" % (self.zpool, filesystem, name))
+    def _oneStep(self):
+        if not self.snapshots_for_replay:
+            return self._reset_snapshots()
+
+        snapshot = self.snapshots_for_replay.pop(0)
+        return self._receive_snapshot(self.filesystem, snapshot)
 
 
-    def _create_changes(self, filesystem):
-        pattern = (
-            b"she slit the sheet the sheet she slit and on the slitted sheet "
-            b"she sits.") * 64
-        for i in range(CHANGE_FILES_COUNT):
-            fObj = open(b"%s/%s/data.%d" % (self.root, filesystem, i), "w")
-            fObj.write(pattern)
-            fObj.close()
-            pattern = pattern[1:] + pattern[0]
+# recv - not-exist
 
 
-    def _record_changes(self, filesystem, start, end):
-        output_filename = b"%s_%s_%s" % (filesystem, start, end)
-        fObj = open(output_filename, "w")
-        self._run(
-            ZFS, b"send", b"-I",
-            b"%s/%s@%s" % (self.zpool, filesystem, start),
-            b"%s/%s@%s" % (self.zpool, filesystem, end),
-            childFDs={0: 'w', 1: fObj.fileno(), 2: 'r'})
-        fObj.close()
-        return output_filename
+# snapshot - other filesystem
 
 
-    def _destroy_snapshot(self, filesystem, name):
-        self._run(
-            ZFS, b"destroy", b"%s/%s@%s" % (self.zpool, filesystem, name))
+# snapshot - same filesystem
+class SnapshotUsedFilesystemLoad(BaseLoad):
+    _iteration = 0
 
-
-    def _receive_snapshot(self, filesystem, input_filename):
-        class ReceiveProto(ProcessProtocol):
-            command = [ZFS, b"recv", b"-F", b"-d", b"%(zpool)s/%(filesystem)s"]
-
-            @classmethod
-            def run(cls, reactor):
-                proto = cls()
-                proto.finished = Deferred()
-                proto.fObj = open(input_filename, 'r')
-                command = [arg % dict(zpool=self.zpool, filesystem=filesystem)
-                           for arg
-                           in cls.command]
-
-                print "command:\t", command
-                reactor.spawnProcess(
-                    proto, command[0], command, childFDs={0: proto.fObj.fileno(), 1: 'r', 2: 'r'})
-                return proto
-
-            def connectionMade(self):
-                self.out = []
-                self.err = []
-
-            def outReceived(self, data):
-                self.out.append(data)
-
-            def errReceived(self, data):
-                self.err.append(data)
-
-            def kill(self):
-                reactor.callFromThread(self.transport.signalProcess, "KILL")
-
-            def wait(self):
-                blockingCallFromThread(reactor, lambda: self.finished)
-
-            def processEnded(self, reason):
-                self.endedReason = reason
-                print ctime(), "Load ended!"
-                self.fObj.close()
-
-                _summarize(self)
-
-                self.finished.callback(self)
-
-        return ReceiveProto.run(reactor)
-
+    def _oneStep(self):
+        self._iteration += 1
+        return self._create_snapshot(self.benchmarkFilesystem, bytes(iteration))
+        
 
     def start(self):
-        # Unmount the filesystem before receiving into it.
-        jailsetup.run_return(
-            b"%s umount %s/%s" % (ZFS, self.zpool, self.filesystem))
-        self._stopLoad = False
-        # Replay the change log asynchronously
-        print ctime(), 'Load started'
-        reactor.callFromThread(self._generate_load)
+        self._task = self._startCooperativeTask()
+        return succeed(None)
 
 
-    def _generate_load(self):
+
+# recv - other filesystem - large case
+class ReplayLargeLoad(BaseLoad):
+    """
+    """
+    def _oneStep(self):
         # Run a "zfs recv".  If it finishes, destroy the received snapshot and
         # run the same "zfs recv" again.  Continue until poked from the outside
         # to stop.  Call this in the reactor thread.
-        def restart(ignored=None):
-            self.process = None
+        yield self._destroy_snapshot(self.filesystem, b'end')
+        self.process = self._receive_snapshot(self.filesystem, self._snapshot)
+        yield self.process.finished
 
-            if self._stopLoad:
-                return
 
-            print 'Destroying snapshot to re-receive'
-            d = deferToThread(
-                self._destroy_snapshot, self.filesystem, b'end')
+    @inlineCallbacks
+    def start(self):
+        self._stopLoad = False
 
-            def cleanupDone(ignored):
-                print 'Starting load'
-                self.process = self._receive_snapshot(
-                    self.filesystem, self._snapshot)
-                self.process.finished.addCallback(restart)
-            d.addCallback(cleanupDone)
-        restart()
+        # Get rid of any leftovers from previous runs
+        yield self._destroy_filesystem(self.filesystem)
+        yield self._create_filesystem(self.filesystem)
+
+        # Take a snapshot of that filesystem to later replay onto
+        yield self._create_snapshot(self.filesystem, b'start')
+
+        # Make some changes so we have a sizable change log to replay
+        yield self._create_changes(self.filesystem)
+
+        # Take the new snapshot
+        yield self._create_snapshot(self.filesystem, b'end')
+
+        # Record the changes into a file to replay from
+        self._snapshot = yield self._record_changes(
+            self.filesystem, b'start', b'end')
+
+        # Unmount the filesystem before receiving into it.
+        yield getProcessOutput(
+            ZFS, [b"umount", b"%s/%s" % (self.zpool, self.filesystem)])
+
+        # Replay the change log asynchronously
+        print ctime(), 'Load started'
+        self._startCooperativeTask()
 
 
     def stop(self):
@@ -355,12 +293,7 @@ class ReplayLargeLoad(object):
             # Kill the currently running zfs recv
             self.process.kill()
 
-            # Wait to be notified it exited
-            self.process.wait()
-            print ctime(), "Wait completed"
-
-            # Delete the snapshot so we can receive it again.
-            self._destroy_snapshot(self.filesystem, b'end')
+        return BaseLoad.stop(self)
 
 
 
@@ -380,10 +313,25 @@ def main():
     reactor.run()
 
 
+
+class Blocking(object):
+    def __init__(self, what):
+        self.what = what
+
+
+    def start(self):
+        return blockingCallFromThread(self.what.start)
+
+
+    def stop(self):
+        return blockingCallFromThread(self.what.stop)
+
+
+
 def benchmark():
     print 'Initializing...'
-    load = ReplayLargeLoad(b'/hcfs', jailsetup.ZPOOL)
-    jail = Jail(b"testjail-%d" % (randrange(2 ** 16),))
+    load = Blocking(ReplayLargeLoad(b'/hcfs', jailsetup.ZPOOL))
+    jail = Blocking(Jail(b"testjail-%d" % (randrange(2 ** 16),)))
 
     print ctime(), "STARTING UNLOADED TEST"
     read_measurements = measure_read(MEASUREMENTS)
