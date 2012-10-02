@@ -28,7 +28,7 @@ JEXEC = b"/usr/sbin/jexec"
 JLS = b"/usr/sbin/jls"
 PKG_ADD = b"/usr/sbin/pkg_add"
 
-if False:
+if True:
     PYTHON = b"/usr/bin/python"
     TMP = b"/tmp/jails/tmpfiles"
     CHANGE_FILES_COUNT = 2 ** 20
@@ -234,6 +234,7 @@ class ReplayLargeLoad(object):
     def _create_snapshot(self, filesystem, name):
         self._run(
             ZFS, b"snapshot", b"%s/%s@%s" % (self.zpool, filesystem, name))
+
 
     def _create_changes(self, filesystem):
         pattern = (
