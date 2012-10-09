@@ -260,12 +260,12 @@ class RenameFilesystemLoad(BaseLoad):
         def cmd(s):
             return (s % args).split(" ")
 
-        yield self._run(ZFS, *cmd("rename %(zpool)s/hcfs/%(filesystem)s %(zpool)s/hcfs-trash/%(filesystem)s-%(timestamp)s"))
+        yield self._run(ZFS, *cmd("rename %(zpool)s/%(filesystem)s %(zpool)s/hcfs-trash/%(filesystem)s-%(timestamp)s"))
         yield self._run(ZFS, *cmd("set mountpoint=/hcfs-trash/%(filesystem)s-%(timestamp)s %(zpool)s/hcfs-trash/%(filesystem)s-%(timestamp)s"))
 
         # Un-trash the filesystem
-        yield self._run(ZFS, *cmd("set mountpoint=/hcfs/%(filesystem)s %(zpool)s/hcfs-trash/%(filesystem)s-%(timestamp)s"))
-        yield self._run(ZFS, *cmd("rename %(zpool)s/hcfs-trash/%(filesystem)s-%(timestamp)s %(zpool)s/hcfs/%(filesystem)s"))
+        yield self._run(ZFS, *cmd("set mountpoint=/%(filesystem)s %(zpool)s/hcfs-trash/%(filesystem)s-%(timestamp)s"))
+        yield self._run(ZFS, *cmd("rename %(zpool)s/hcfs-trash/%(filesystem)s-%(timestamp)s %(zpool)s/%(filesystem)s"))
 
 
 
