@@ -17,6 +17,7 @@ from twisted.internet.utils import getProcessOutput
 from twisted.internet.error import ProcessDone
 from twisted.internet.threads import deferToThread, blockingCallFromThread
 from twisted.python.log import startLogging, err
+from twisted.python import usage
 
 import jailsetup
 import loads
@@ -62,7 +63,9 @@ def _summarize(proto):
 
 
 def mean(values):
-    return sum(values) / len(values)
+    if values:
+        return sum(values) / len(values)
+    return 0
 
 
 
@@ -182,16 +185,32 @@ class ParallelLoad(object):
         return gatherResults([load.stop() for load in self.loads])
 
 
+class Options(usage.Options):
+    optFlags = [('jail', 'j', "Benchmark jail performance as well")]
+
+    def __init__(self):
+        usage.Options.__init__(self)
+        self['loads'] = [b"ReplayLargeLoad"]
+
+
+    def parseArgs(self, *loads):
+        self['loads'] = loads
+
+
 
 def main(argv):
     startLogging(stdout)
 
-    if len(argv) == 0:
-        argv = [b"ReplayLargeLoad"]
+    o = Options()
+    o.parseOptions(argv)
+
     load = ParallelLoad([
             getattr(loads, arg)(b'/hcfs', jailsetup.ZPOOL)
-            for arg in argv])
-    jail = Jail(b"testjail-%d" % (randrange(2 ** 16),))
+            for arg in o['loads']])
+    if o['jail']:
+        jail = Jail(b"testjail-%d" % (randrange(2 ** 16),))
+    else:
+        jail = None
 
     print 'Starting benchmark'
     d = deferToThread(benchmark, load, jail)
@@ -219,7 +238,8 @@ class Blocking(object):
 def benchmark(load, jail):
     print 'Initializing...'
     load = Blocking(load)
-    jail = Blocking(jail)
+    if jail is not None:
+        jail = Blocking(jail)
 
     print ctime(), "STARTING UNLOADED TEST"
     read_measurements = measure_read(MEASUREMENTS)
@@ -237,26 +257,29 @@ def benchmark(load, jail):
 
     print ctime(), "DONE LOADED TEST"
 
-    print ctime(), "STARTING JAIL TEST"
+    if jail is None:
+        jail_read_measurements = jail_write_measurements = loaded_jail_read_measurements = loaded_jail_write_measurements = []
+    else:
+        print ctime(), "STARTING JAIL TEST"
 
-    jail.start()
-    try:
-        jail_read_measurements = measure_read_jail(jail.id, MEASUREMENTS)
-        jail_write_measurements = measure_write_jail(jail.id, MEASUREMENTS)
-
-        print ctime(), "DONE JAIL TEST"
-
-        print ctime(), "STARTING LOADED JAIL TEST"
-        load.start(benchmarkFilesystem=b"/usr/jails/" + jail.name)
+        jail.start()
         try:
-            loaded_jail_read_measurements = measure_read_jail(jail.id, MEASUREMENTS)
-            loaded_jail_write_measurements = measure_write_jail(jail.id, MEASUREMENTS)
-        finally:
-            load.stop()
+            jail_read_measurements = measure_read_jail(jail.id, MEASUREMENTS)
+            jail_write_measurements = measure_write_jail(jail.id, MEASUREMENTS)
 
-        print ctime(), "DONE LOADED JAIL TEST"
-    finally:
-        jail.stop()
+            print ctime(), "DONE JAIL TEST"
+
+            print ctime(), "STARTING LOADED JAIL TEST"
+            load.start(benchmarkFilesystem=b"/usr/jails/" + jail.name)
+            try:
+                loaded_jail_read_measurements = measure_read_jail(jail.id, MEASUREMENTS)
+                loaded_jail_write_measurements = measure_write_jail(jail.id, MEASUREMENTS)
+            finally:
+                load.stop()
+
+            print ctime(), "DONE LOADED JAIL TEST"
+        finally:
+            jail.stop()
 
     print 'mean unloaded read time', milli(mean(read_measurements[WARMUP_MEASUREMENTS:]))
     print 'mean unloaded write time', milli(mean(write_measurements[WARMUP_MEASUREMENTS:]))
