@@ -4,7 +4,7 @@
 from __future__ import division, unicode_literals, absolute_import
 
 import os.path
-from sys import stdout, argv
+from sys import stdout, argv, platform
 
 from random import randrange
 from time import time, ctime
@@ -30,13 +30,18 @@ JLS = b"/usr/sbin/jls"
 PKG_ADD = b"/usr/sbin/pkg_add"
 
 if loads.LARGE_MODE:
-    PYTHON = b"/usr/bin/python"
-    TMP = b"/tmp/jails/tmpfiles"
     READ_FILES_FACTOR = 255
 else:
+    READ_FILES_FACTOR = 2
+
+if 'freebsd' in platform:
     PYTHON = b"/usr/local/bin/python"
     TMP = b"/usr/jails/tmpfiles"
-    READ_FILES_FACTOR = 2
+elif 'linux' in platform:
+    PYTHON = b"/usr/bin/python"
+    TMP = b"/tmp/jails/tmpfiles"
+else:
+    raise Exception("Don't understand this platform")
 
 WARMUP_MEASUREMENTS = 1000
 MEASUREMENTS = WARMUP_MEASUREMENTS * 10
@@ -194,7 +199,7 @@ class Options(usage.Options):
 
 
     def parseArgs(self, *loads):
-        self['loads'] = loads
+        self['loads'] = sorted(loads)
 
 
 
@@ -276,7 +281,7 @@ def benchmark(load, jail):
     print 'mean loaded jail read time', milli(mean(loaded_jail_read_measurements[WARMUP_MEASUREMENTS:]))
     print 'mean loaded jail write time', milli(mean(loaded_jail_write_measurements[WARMUP_MEASUREMENTS:]))
 
-    output = open(b'results-%d.pickle' % (time(),), 'w')
+    output = open(b'results-%s-%d.pickle' % (",".join(o['loads'], time())), 'w')
     dump(dict(
             read_measurements=read_measurements,
             write_measurements=write_measurements,
