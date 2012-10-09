@@ -219,6 +219,11 @@ def main(argv):
 
     print 'Starting benchmark'
     d = deferToThread(benchmark, load, jail)
+    def succeeded(results):
+        output = open(b'results-%s-%d.pickle' % (",".join(o['loads'], time())), 'w')
+        dump(results, output)
+        output.close()
+    d.addCallback(succeeded)
     d.addErrback(err, "Benchmark failed")
     d.addBoth(lambda ignored: reactor.stop())
     print 'Running reactor'
@@ -281,17 +286,15 @@ def benchmark(load, jail):
     print 'mean loaded jail read time', milli(mean(loaded_jail_read_measurements[WARMUP_MEASUREMENTS:]))
     print 'mean loaded jail write time', milli(mean(loaded_jail_write_measurements[WARMUP_MEASUREMENTS:]))
 
-    output = open(b'results-%s-%d.pickle' % (",".join(o['loads'], time())), 'w')
-    dump(dict(
-            read_measurements=read_measurements,
-            write_measurements=write_measurements,
-            jail_read_measurements=jail_read_measurements,
-            jail_write_measurements=jail_write_measurements,
-            loaded_read_measurements=loaded_read_measurements,
-            loaded_write_measurements=loaded_write_measurements,
-            loaded_jail_read_measurements=loaded_jail_read_measurements,
-            loaded_jail_write_measurements=loaded_jail_write_measurements),
-                output)
+    return dict(
+        read_measurements=read_measurements,
+        write_measurements=write_measurements,
+        jail_read_measurements=jail_read_measurements,
+        jail_write_measurements=jail_write_measurements,
+        loaded_read_measurements=loaded_read_measurements,
+        loaded_write_measurements=loaded_write_measurements,
+        loaded_jail_read_measurements=loaded_jail_read_measurements,
+        loaded_jail_write_measurements=loaded_jail_write_measurements)
 
 
 if __name__ == '__main__':

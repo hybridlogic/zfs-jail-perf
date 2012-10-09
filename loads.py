@@ -110,8 +110,8 @@ class BaseLoad(object):
     def _create_snapshot(self, filesystem, name):
         return self._run(
             ZFS, b"snapshot", b"%s/hcfs/%s@%s" % (self.zpool, filesystem, name))
-    
-        
+
+
     def _create_changes(self, filesystem):
         pattern = (
             b"she slit the sheet the sheet she slit and on the slitted sheet "
@@ -145,7 +145,6 @@ class BaseLoad(object):
         return self._run(
             ZFS, b"destroy", b"-r", b"%s/hcfs/%s" % (self.zpool, filesystem))
 
-# errput: cannot receive incremental stream: destination 'hpool/hcfs/zfs-perf-test-6933/hcfs/zfs-perf-test-6933' does not exist
 
     def _receive_snapshot(self, filesystem, input_filename):
         class ReceiveProto(ProcessProtocol):
@@ -294,7 +293,7 @@ class PruneSnapshots(BaseLoad):
         # Now kick off the thing which runs forever in a loop.
         self._startCooperativeTask()
 
-    
+
     @inlineCallbacks
     def _oneStep(self):
         yield self._newSnapshot()
@@ -311,7 +310,7 @@ class LotsOfTinySnapshots(BaseLoad):
 
     """
     COUNT = 50
-    
+
     @inlineCallbacks
     def start(self, benchmarkFilesystem):
 
@@ -448,4 +447,3 @@ class ReplayLargeLoad(BaseLoad):
             self.process.kill()
 
         return BaseLoad.stop(self)
-
