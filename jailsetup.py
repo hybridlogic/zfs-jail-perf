@@ -25,7 +25,7 @@ def initial_setup(name):
         print "ZFS pool", ZPOOL, "doesn't exist, bailing."
         return
 
-    for fs in ['/jails', '/jails/basejail', '/jails/%s' % (name,)]:
+    for fs in ['/hcfs', '/jails', '/jails/basejail', '/jails/%s' % (name,)]:
         unified = ZPOOL + fs; fsmount = FS_MOUNT_BASE + fs
         if not check_zfs(unified):
             print "Creating", unified

@@ -1,5 +1,5 @@
 from twisted.internet.protocol import ProcessProtocol
-from twisted.internet.defer import Deferred, inlineCallbacks, returnValue, succeed
+from twisted.internet.defer import Deferred, inlineCallbacks, returnValue, succeed, maybeDeferred
 from twisted.internet.error import ProcessDone
 from twisted.internet.utils import getProcessOutput
 from twisted.internet import reactor
@@ -41,6 +41,7 @@ class BaseLoad(object):
         self.zpool = zpool
         self.filesystem = b'%s-%d' % (self.tag, randrange(2 ** 16),)
         self.cooperativeTask = None
+        self._done = None
         self._stopFlag = False
         self._cooperator = None
 
@@ -49,11 +50,12 @@ class BaseLoad(object):
         if self._cooperator is not None:
             raise Exception("Don't start me twice!")
         self._cooperator = task.cooperate(self._generator())
+        self._done = self._cooperator.whenDone()
 
 
     def _stopCooperativeTask(self):
         self._stopFlag = True
-        return self._cooperator.whenDone()
+        return self._done
 
 
     def _generator(self):
@@ -63,6 +65,7 @@ class BaseLoad(object):
         """
         while not self._stopFlag:
             yield self._oneStep()
+        self._cooperator = None
 
 
     def _oneStep(self):
@@ -82,12 +85,12 @@ class BaseLoad(object):
     def stop(self):
         # Runs in reactor thread.  Return a Deferred that fires when
         # load is stopped.
-        return self._stopCooperativeTask()
+        return maybeDeferred(self._stopCooperativeTask)
 
 
     @inlineCallbacks
     def _create_filesystem(self, filesystem):
-        fqfn = b"%s/%s" % (self.zpool, filesystem)
+        fqfn = b"%s/hcfs/%s" % (self.zpool, filesystem)
         yield self._run(ZFS, b"create", fqfn)
         yield self._run(
             ZFS, b"set",
@@ -101,7 +104,7 @@ class BaseLoad(object):
 
     def _create_snapshot(self, filesystem, name):
         return self._run(
-            ZFS, b"snapshot", b"%s/%s@%s" % (self.zpool, filesystem, name))
+            ZFS, b"snapshot", b"%s/hcfs/%s@%s" % (self.zpool, filesystem, name))
     
         
     def _create_changes(self, filesystem):
@@ -121,8 +124,8 @@ class BaseLoad(object):
         fObj = open(output_filename, "w")
         yield self._run(
             ZFS, b"send", b"-I",
-            b"%s/%s@%s" % (self.zpool, filesystem, start),
-            b"%s/%s@%s" % (self.zpool, filesystem, end),
+            b"%s/hcfs/%s@%s" % (self.zpool, filesystem, start),
+            b"%s/hcfs/%s@%s" % (self.zpool, filesystem, end),
             childFDs={0: 'w', 1: fObj.fileno(), 2: 'r'})
         fObj.close()
         returnValue(output_filename)
@@ -130,17 +133,17 @@ class BaseLoad(object):
 
     def _destroy_snapshot(self, filesystem, name):
         return self._run(
-            ZFS, b"destroy", b"%s/%s@%s" % (self.zpool, filesystem, name))
+            ZFS, b"destroy", b"%s/hcfs/%s@%s" % (self.zpool, filesystem, name))
 
 
     def _destroy_filesystem(self, filesystem):
         return self._run(
-            ZFS, b"destroy", b"-r", b"%s/%s" % (self.zpool, filesystem))
+            ZFS, b"destroy", b"-r", b"%s/hcfs/%s" % (self.zpool, filesystem))
 
 
     def _receive_snapshot(self, filesystem, input_filename):
         class ReceiveProto(ProcessProtocol):
-            command = [ZFS, b"recv", b"-F", b"-d", b"%(zpool)s/%(filesystem)s"]
+            command = [ZFS, b"recv", b"-F", b"-d", b"%(zpool)s/hcfs/%(filesystem)s"]
 
             @classmethod
             def run(cls, reactor):
@@ -244,16 +247,17 @@ class RenameFilesystemLoad(BaseLoad):
         trash_timestamp = str(time.time())
         # Trash the filesystem (cnp'd almost directly from safemounthandler for
         # maximum realism, except added split sadness)
-        yield self._run(ZFS, *("rename %s/hcfs/%s %s/hcfs-trash/%s-%s" % (
-            self.zpool, self.filesystem, self.zpool, trash_timestamp, self.filesystem)).split(" "))
-        yield self._run(ZFS, *("set mountpoint=/hcfs-trash/%s-%s %s/hcfs-trash/%s-%s" % (
-            trash_timestamp, self.filesystem, self.zpool, trash_timestamp, self.filesystem)).split(" "))
+        args = dict(
+            zpool=self.zpool, timestamp=trash_timestamp, filesystem=self.filesystem)
+        def cmd(s):
+            return (s % args).split(" ")
+
+        yield self._run(ZFS, *cmd("rename %(zpool)s/hcfs/%(filesystem)s %(zpool)s/hcfs-trash/%(filesystem)s-%(timestamp)s"))
+        yield self._run(ZFS, *cmd("set mountpoint=/hcfs-trash/%(filesystem)s-%(timestamp)s %(zpool)s/hcfs-trash/%(filesystem)s-%(timestamp)s"))
 
         # Un-trash the filesystem
-        yield self._run(ZFS, *("set mountpoint=/hcfs/%s %s/hcfs-trash/%s-%s" % (
-            self.filesystem, self.zpool, trash_timestamp, self.filesystem)).split(" "))
-        yield self._run(ZFS, *("rename %s/hcfs-trash/%s-%s %s/hcfs/%s" % (
-            trash_timestamp, self.filesystem, self.zpool, self.filesystem, self.zpool)).split(" "))
+        yield self._run(ZFS, *cmd("set mountpoint=/hcfs/%(filesystem)s %(zpool)s/hcfs-trash/%(filesystem)s-%(timestamp)s"))
+        yield self._run(ZFS, *cmd("rename %(zpool)s/hcfs-trash/%(filesystem)s-%(timestamp)s %(zpool)s/hcfs/%(filesystem)s"))
 
 
 
@@ -266,7 +270,7 @@ class PruneSnapshots(BaseLoad):
         yield self._create_snapshot(self.filesystem, str(self.snapshotCounter))
         yield self._create_changes(self.filesystem)
         self.snapshots.append(self.snapshotCounter)
-        self.snaphotCounter += 1
+        self.snapshotCounter += 1
 
     @inlineCallbacks
     def start(self, benchmarkFilesystem):
@@ -287,7 +291,7 @@ class PruneSnapshots(BaseLoad):
         yield self._newSnapshot()
         # Randomly pick a snapshot and take it out.
         target = self.random.choice(self.snapshots)
-        yield self._destroy_snapshot(target)
+        yield self._destroy_snapshot(self.filesystem, target)
         self.snapshots.remove(target)
 
 
@@ -365,6 +369,8 @@ class SnapshotUsedFilesystemLoad(BaseLoad):
 class ReplayLargeLoad(BaseLoad):
     """
     """
+    process = None
+
     def _oneStep(self):
         # Run a "zfs recv".  If it finishes, destroy the received snapshot and
         # run the same "zfs recv" again.  Continue until poked from the outside
@@ -372,12 +378,11 @@ class ReplayLargeLoad(BaseLoad):
         yield self._destroy_snapshot(self.filesystem, b'end')
         self.process = self._receive_snapshot(self.filesystem, self._snapshot)
         yield self.process.finished
+        self.process = None
 
 
     @inlineCallbacks
     def start(self, benchmarkFilesystem):
-        self._stopLoad = False
-
         # Get rid of any leftovers from previous runs
         yield self._destroy_filesystem(self.filesystem)
         yield self._create_filesystem(self.filesystem)
@@ -397,7 +402,7 @@ class ReplayLargeLoad(BaseLoad):
 
         # Unmount the filesystem before receiving into it.
         yield getProcessOutput(
-            ZFS, [b"umount", b"%s/%s" % (self.zpool, self.filesystem)])
+            ZFS, [b"umount", b"%s/hcfs/%s" % (self.zpool, self.filesystem)])
 
         # Replay the change log asynchronously
         print ctime(), 'Load started'
@@ -408,9 +413,6 @@ class ReplayLargeLoad(BaseLoad):
         # Stop whatever command is currently in progress and wait for it to
         # actually exit.
         print ctime(), "Killing load and waiting.."
-
-        # Stop the process loop
-        self._stopLoad = True
 
         if self.process is not None:
             # Kill the currently running zfs recv
