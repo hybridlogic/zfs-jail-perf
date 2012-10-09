@@ -241,7 +241,7 @@ def benchmark(load, jail):
 
     print ctime(), "STARTING LOADED TEST"
 
-    blockingCallFromThread(reactor, load.start, benchmarkFilesystem=b'/')
+    blockingCallFromThread(reactor, load.start, benchmarkFilesystem=b'root')
     try:
         loaded_read_measurements = measure_read(MEASUREMENTS)
         loaded_write_measurements = measure_write(MEASUREMENTS)

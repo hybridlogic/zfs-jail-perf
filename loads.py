@@ -39,7 +39,7 @@ class BaseLoad(object):
         """
         self.root = root
         self.zpool = zpool
-        self.filesystem = b'%s-%d' % (self.tag, randrange(2 ** 16),)
+        self.filesystem = b'hcfs/%s-%d' % (self.tag, randrange(2 ** 16),)
         self.cooperativeTask = None
         self._done = None
         self._stopFlag = False
@@ -95,7 +95,7 @@ class BaseLoad(object):
 
     @inlineCallbacks
     def _create_filesystem(self, filesystem):
-        fqfn = b"%s/hcfs/%s" % (self.zpool, filesystem)
+        fqfn = b"%s/%s" % (self.zpool, filesystem)
         yield self._run(ZFS, b"create", fqfn)
         yield self._run(
             ZFS, b"set",
@@ -109,7 +109,7 @@ class BaseLoad(object):
 
     def _create_snapshot(self, filesystem, name):
         return self._run(
-            ZFS, b"snapshot", b"%s/hcfs/%s@%s" % (self.zpool, filesystem, name))
+            ZFS, b"snapshot", b"%s/%s@%s" % (self.zpool, filesystem, name))
 
 
     def _create_changes(self, filesystem):
@@ -129,8 +129,8 @@ class BaseLoad(object):
         fObj = open(output_filename, "w")
         yield self._run(
             ZFS, b"send", b"-I",
-            b"%s/hcfs/%s@%s" % (self.zpool, filesystem, start),
-            b"%s/hcfs/%s@%s" % (self.zpool, filesystem, end),
+            b"%s/%s@%s" % (self.zpool, filesystem, start),
+            b"%s/%s@%s" % (self.zpool, filesystem, end),
             childFDs={0: 'w', 1: fObj.fileno(), 2: 'r'})
         fObj.close()
         returnValue(output_filename)
@@ -138,12 +138,12 @@ class BaseLoad(object):
 
     def _destroy_snapshot(self, filesystem, name):
         return self._run(
-            ZFS, b"destroy", b"%s/hcfs/%s@%s" % (self.zpool, filesystem, name))
+            ZFS, b"destroy", b"%s/%s@%s" % (self.zpool, filesystem, name))
 
 
     def _destroy_filesystem(self, filesystem):
         return self._run(
-            ZFS, b"destroy", b"-r", b"%s/hcfs/%s" % (self.zpool, filesystem))
+            ZFS, b"destroy", b"-r", b"%s/%s" % (self.zpool, filesystem))
 
 
     def _receive_snapshot(self, filesystem, input_filename):
@@ -430,7 +430,7 @@ class ReplayLargeLoad(BaseLoad):
 
         # Unmount the filesystem before receiving into it.
         yield getProcessOutput(
-            ZFS, [b"umount", b"%s/hcfs/%s" % (self.zpool, self.filesystem)])
+            ZFS, [b"umount", b"%s/%s" % (self.zpool, self.filesystem)])
 
         # Replay the change log asynchronously
         print ctime(), 'Load started'
