@@ -220,7 +220,7 @@ def main(argv):
     print 'Starting benchmark'
     d = deferToThread(benchmark, load, jail)
     def succeeded(results):
-        output = open(b'results-%s-%d.pickle' % (",".join(o['loads'], time())), 'w')
+        output = open(b'results-%s-%d.pickle' % (",".join(o['loads']), time()), 'w')
         dump(results, output)
         output.close()
     d.addCallback(succeeded)
