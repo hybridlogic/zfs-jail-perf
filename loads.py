@@ -1,5 +1,5 @@
 from twisted.internet.protocol import ProcessProtocol
-from twisted.internet.defer import Deferred, inlineCallbacks, returnValue, succeed
+from twisted.internet.defer import Deferred, inlineCallbacks, returnValue, succeed, maybeDeferred
 from twisted.internet.error import ProcessDone
 from twisted.internet.utils import getProcessOutput
 from twisted.internet import reactor
@@ -41,6 +41,7 @@ class BaseLoad(object):
         self.zpool = zpool
         self.filesystem = b'%s-%d' % (self.tag, randrange(2 ** 16),)
         self.cooperativeTask = None
+        self._done = None
         self._stopFlag = False
         self._cooperator = None
 
@@ -49,11 +50,12 @@ class BaseLoad(object):
         if self._cooperator is not None:
             raise Exception("Don't start me twice!")
         self._cooperator = task.cooperate(self._generator())
+        self._done = self._cooperator.whenDone()
 
 
     def _stopCooperativeTask(self):
         self._stopFlag = True
-        return self._cooperator.whenDone()
+        return self._done
 
 
     def _generator(self):
@@ -63,6 +65,7 @@ class BaseLoad(object):
         """
         while not self._stopFlag:
             yield self._oneStep()
+        self._cooperator = None
 
 
     def _oneStep(self):
@@ -82,7 +85,7 @@ class BaseLoad(object):
     def stop(self):
         # Runs in reactor thread.  Return a Deferred that fires when
         # load is stopped.
-        return self._stopCooperativeTask()
+        return maybeDeferred(self._stopCooperativeTask)
 
 
     @inlineCallbacks
@@ -365,6 +368,8 @@ class SnapshotUsedFilesystemLoad(BaseLoad):
 class ReplayLargeLoad(BaseLoad):
     """
     """
+    process = None
+
     def _oneStep(self):
         # Run a "zfs recv".  If it finishes, destroy the received snapshot and
         # run the same "zfs recv" again.  Continue until poked from the outside
@@ -372,12 +377,11 @@ class ReplayLargeLoad(BaseLoad):
         yield self._destroy_snapshot(self.filesystem, b'end')
         self.process = self._receive_snapshot(self.filesystem, self._snapshot)
         yield self.process.finished
+        self.process = None
 
 
     @inlineCallbacks
     def start(self, benchmarkFilesystem):
-        self._stopLoad = False
-
         # Get rid of any leftovers from previous runs
         yield self._destroy_filesystem(self.filesystem)
         yield self._create_filesystem(self.filesystem)
@@ -408,9 +412,6 @@ class ReplayLargeLoad(BaseLoad):
         # Stop whatever command is currently in progress and wait for it to
         # actually exit.
         print ctime(), "Killing load and waiting.."
-
-        # Stop the process loop
-        self._stopLoad = True
 
         if self.process is not None:
             # Kill the currently running zfs recv

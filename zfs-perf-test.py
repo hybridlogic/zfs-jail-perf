@@ -202,24 +202,8 @@ def main(argv):
 
 
 
-class Blocking(object):
-    def __init__(self, what):
-        self.what = what
-
-
-    def start(self):
-        return blockingCallFromThread(self.what.start)
-
-
-    def stop(self):
-        return blockingCallFromThread(self.what.stop)
-
-
-
 def benchmark(load, jail):
     print 'Initializing...'
-    load = Blocking(load)
-    jail = Blocking(jail)
 
     print ctime(), "STARTING UNLOADED TEST"
     read_measurements = measure_read(MEASUREMENTS)
@@ -228,18 +212,18 @@ def benchmark(load, jail):
 
     print ctime(), "STARTING LOADED TEST"
 
-    load.start(benchmarkFilesystem=b'/')
+    blockingCallFromThread(reactor, load.start, benchmarkFilesystem=b'/')
     try:
         loaded_read_measurements = measure_read(MEASUREMENTS)
         loaded_write_measurements = measure_write(MEASUREMENTS)
     finally:
-        load.stop()
+        blockingCallFromThread(reactor, load.stop)
 
     print ctime(), "DONE LOADED TEST"
 
     print ctime(), "STARTING JAIL TEST"
 
-    jail.start()
+    blockingCallFromThread(reactor, jail.start)
     try:
         jail_read_measurements = measure_read_jail(jail.id, MEASUREMENTS)
         jail_write_measurements = measure_write_jail(jail.id, MEASUREMENTS)
@@ -247,16 +231,16 @@ def benchmark(load, jail):
         print ctime(), "DONE JAIL TEST"
 
         print ctime(), "STARTING LOADED JAIL TEST"
-        load.start(benchmarkFilesystem=b"/usr/jails/" + jail.name)
+        blockingCallFromThread(reactor, load.start, benchmarkFilesystem=b"/usr/jails/" + jail.name)
         try:
             loaded_jail_read_measurements = measure_read_jail(jail.id, MEASUREMENTS)
             loaded_jail_write_measurements = measure_write_jail(jail.id, MEASUREMENTS)
         finally:
-            load.stop()
+            blockingCallFromThread(reactor, load.stop)
 
         print ctime(), "DONE LOADED JAIL TEST"
     finally:
-        jail.stop()
+        blockingCallFromThread(reactor, jail.stop)
 
     print 'mean unloaded read time', milli(mean(read_measurements[WARMUP_MEASUREMENTS:]))
     print 'mean unloaded write time', milli(mean(write_measurements[WARMUP_MEASUREMENTS:]))
