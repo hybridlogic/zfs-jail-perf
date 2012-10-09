@@ -18,14 +18,14 @@ else:
 
 
 def _summarize(proto):
+    if proto.endedReason.check(ProcessDone):
+        print "\t(%s)ended successfully" % (proto.pid,)
+    else:
+        print "\t(%s)ended:\t%s" % (proto.pid, proto.endedReason.getErrorMessage())
     if proto.out:
         print "\toutput:\t", b"".join(proto.out)[:80]
     if proto.err:
         print "\terrput:\t", b"".join(proto.err)
-    if proto.endedReason.check(ProcessDone):
-        print "\tended successfully"
-    else:
-        print "\tended:\t", proto.endedReason.getErrorMessage()
 
 
 class BaseLoad(object):
@@ -140,10 +140,11 @@ class BaseLoad(object):
         return self._run(
             ZFS, b"destroy", b"-r", b"%s/hcfs/%s" % (self.zpool, filesystem))
 
+# errput: cannot receive incremental stream: destination 'hpool/hcfs/zfs-perf-test-6933/hcfs/zfs-perf-test-6933' does not exist
 
     def _receive_snapshot(self, filesystem, input_filename):
         class ReceiveProto(ProcessProtocol):
-            command = [ZFS, b"recv", b"-F", b"-d", b"%(zpool)s/hcfs/%(filesystem)s"]
+            command = [ZFS, b"recv", b"-F", b"-d", b"%(zpool)s"]
 
             @classmethod
             def run(cls, reactor):
@@ -154,9 +155,10 @@ class BaseLoad(object):
                            for arg
                            in cls.command]
 
-                print "command:\t", command
                 reactor.spawnProcess(
                     proto, command[0], command, childFDs={0: proto.fObj.fileno(), 1: 'r', 2: 'r'})
+                proto.pid = proto.transport.pid
+                print "command (%d):\t%s" % (proto.pid, command), '<', input_filename
                 return proto
 
             def connectionMade(self):
@@ -184,7 +186,7 @@ class BaseLoad(object):
 
                 self.finished.callback(self)
 
-        return ReceiveProto.run(reactor)
+        return ReceiveProto.run(reactor).finished
 
 
 
@@ -197,7 +199,8 @@ class BaseLoad(object):
                 proto = cls()
                 proto.finished = Deferred()
                 reactor.spawnProcess(proto, command[0], command, **kwargs)
-                return proto.finished
+                proto.pid = proto.transport.pid
+                return proto
 
             def connectionMade(self):
                 self.out = []
@@ -213,8 +216,9 @@ class BaseLoad(object):
                 self.endedReason = reason
                 self.finished.callback(self)
 
-        print "command:\t", command, kwargs
-        d = Collector.run(reactor)
+        proto = Collector.run(reactor)
+        print "command (%d):\t %s %s" % (proto.pid, command, kwargs)
+        d = proto.finished
         d.addCallback(_summarize)
         return d
 
@@ -299,40 +303,50 @@ class PruneSnapshots(BaseLoad):
 # recv - other filesystem - small case
 class LotsOfTinySnapshots(BaseLoad):
     """
-    
+
     """
+    COUNT = 50
+    
     @inlineCallbacks
     def start(self, benchmarkFilesystem):
+
         # Get rid of any leftovers from previous runs
         yield self._destroy_filesystem(self.filesystem)
         yield self._create_filesystem(self.filesystem)
 
-        self.snapshots_for_replay = []
-        snapshot_base = b"%s_%%s_%%s" % (self.filesystem,)
+        self.snapshots = []
 
         # Generate a bunch of snapshots to later replay
         previous = b'0'
-        self._create_snapshot(self.filesystem, previous)
-        for i in range(1, 100):
+        yield self._create_snapshot(self.filesystem, previous)
+        for i in range(1, self.COUNT):
             # Stuff some bytes into it to make the snapshot interesting
             self._create_changes(self.filesystem)
             # Take the snapshot
             yield self._create_snapshot(self.filesystem, bytes(i))
             # Dump it into a file for later replay
-            snapshot = snapshot_base % (previous, i)
-            self._record_changes(snapshot, bytes(previous), bytes(i))
+            snapshot = yield self._record_changes(self.filesystem, bytes(previous), bytes(i))
             previous = i
-            self.snapshots_for_replay.append(snapshot)
+            self.snapshots.append(snapshot)
 
         # Delete all of the snapshots just taken
-        for i in range(100):
-            self._destroy_snapshot(self.filesystem, bytes(i))
-
-        # Save a list of all the snapshots we took
-        self.snapshots = self.snapshots_for_replay[:]
+        yield self._reset_snapshots()
 
         # Start the process of replaying them
         self._startCooperativeTask()
+
+
+    @inlineCallbacks
+    def _reset_snapshots(self):
+        """
+        Delete all the snapshots we received, reload the list of
+        snapshots that we can now receive.
+        """
+        # Keep the first snapshot, since that's what the first saved
+        # incremental stream is based on.
+        for i in range(1, self.COUNT):
+            yield self._destroy_snapshot(self.filesystem, bytes(i))
+        self.snapshots_for_replay = self.snapshots[:]
 
 
     def _oneStep(self):
@@ -356,7 +370,7 @@ class SnapshotUsedFilesystemLoad(BaseLoad):
     def _oneStep(self):
         self._iteration += 1
         return self._create_snapshot(self.benchmarkFilesystem, bytes(self._iteration))
-        
+
 
     def start(self, benchmarkFilesystem):
         self.benchmarkFilesystem = benchmarkFilesystem
