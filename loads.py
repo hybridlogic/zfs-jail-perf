@@ -125,7 +125,7 @@ class BaseLoad(object):
 
     @inlineCallbacks
     def _record_changes(self, filesystem, start, end):
-        output_filename = b"%s_%s_%s" % (filesystem, start, end)
+        output_filename = b"%s_%s_%s" % (filesystem.replace('/', '_'), start, end)
         fObj = open(output_filename, "w")
         yield self._run(
             ZFS, b"send", b"-I",
