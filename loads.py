@@ -9,7 +9,7 @@ import os, time, random
 from time import ctime
 
 ZFS = b"/sbin/zfs"
-LARGE_MODE = False
+LARGE_MODE = True
 
 if LARGE_MODE:
     CHANGE_FILES_COUNT = 2 ** 20

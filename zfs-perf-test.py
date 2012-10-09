@@ -276,7 +276,7 @@ def benchmark(load, jail):
     print 'mean loaded jail read time', milli(mean(loaded_jail_read_measurements[WARMUP_MEASUREMENTS:]))
     print 'mean loaded jail write time', milli(mean(loaded_jail_write_measurements[WARMUP_MEASUREMENTS:]))
 
-    output = open(b'zfs-perf-test.pickle', 'w')
+    output = open(b'results-%d.pickle' % (time(),), 'w')
     dump(dict(
             read_measurements=read_measurements,
             write_measurements=write_measurements,
