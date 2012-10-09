@@ -51,6 +51,11 @@ class BaseLoad(object):
             raise Exception("Don't start me twice!")
         self._cooperator = task.cooperate(self._generator())
         self._done = self._cooperator.whenDone()
+        self._done.addBoth(self._cleanup)
+
+
+    def _cleanup(self, passthrough):
+        return passthrough
 
 
     def _stopCooperativeTask(self):
@@ -355,6 +360,16 @@ class LotsOfTinySnapshots(BaseLoad):
 
         snapshot = self.snapshots_for_replay.pop(0)
         return self._receive_snapshot(self.filesystem, snapshot)
+
+
+    @inlineCallbacks
+    def _cleanup(self, passthrough):
+        # Delete the entire filesystem we were using
+        yield self._destroy_filesystem(self.filesystem)
+        # And delete all the saved incremental streams we created too
+        for s in self.snapshots:
+            os.remove(s)
+        returnValue(passthrough)
 
 
 # recv - not-exist
