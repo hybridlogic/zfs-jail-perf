@@ -255,17 +255,19 @@ class RenameFilesystemLoad(BaseLoad):
         trash_timestamp = str(time.time())
         # Trash the filesystem (cnp'd almost directly from safemounthandler for
         # maximum realism, except added split sadness)
-        args = dict(
-            zpool=self.zpool, timestamp=trash_timestamp, filesystem=self.filesystem)
+        args = {
+            'zpool': self.zpool, 'timestamp': trash_timestamp, 'filesystem': self.filesystem,
+            'trash-filesystem': self.filesystem.replace('hcfs/', 'hcfs-trash/'),
+            }
         def cmd(s):
             return (s % args).split(" ")
 
-        yield self._run(ZFS, *cmd("rename %(zpool)s/%(filesystem)s %(zpool)s/hcfs-trash/%(filesystem)s-%(timestamp)s"))
-        yield self._run(ZFS, *cmd("set mountpoint=/hcfs-trash/%(filesystem)s-%(timestamp)s %(zpool)s/hcfs-trash/%(filesystem)s-%(timestamp)s"))
+        yield self._run(ZFS, *cmd("rename %(zpool)s/%(filesystem)s %(zpool)s/%(trash-filesystem)s-%(timestamp)s"))
+        yield self._run(ZFS, *cmd("set mountpoint=/%(trash-filesystem)s-%(timestamp)s %(zpool)s/%(trash-filesystem)s-%(timestamp)s"))
 
         # Un-trash the filesystem
-        yield self._run(ZFS, *cmd("set mountpoint=/%(filesystem)s %(zpool)s/hcfs-trash/%(filesystem)s-%(timestamp)s"))
-        yield self._run(ZFS, *cmd("rename %(zpool)s/hcfs-trash/%(filesystem)s-%(timestamp)s %(zpool)s/%(filesystem)s"))
+        yield self._run(ZFS, *cmd("set mountpoint=/%(filesystem)s %(zpool)s/%(trash-filesystem)s-%(timestamp)s"))
+        yield self._run(ZFS, *cmd("rename %(zpool)s/%(trash-filesystem)s-%(timestamp)s %(zpool)s/%(filesystem)s"))
 
 
 
