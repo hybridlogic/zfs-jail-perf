@@ -439,6 +439,11 @@ class ReplayLargeLoad(BaseLoad):
         self._startCooperativeTask()
 
 
+    def _cleanup(self, passthrough):
+        os.remove(self._snapshot)
+        return passthrough
+
+
     def stop(self):
         # Stop whatever command is currently in progress and wait for it to
         # actually exit.
