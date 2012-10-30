@@ -1,7 +1,6 @@
 import sys, pickle
 
 import matplotlib.pyplot as plt
-from matplotlib import legend
 
 def main(filename):
     with open(filename) as fObj:
@@ -14,7 +13,7 @@ def main(filename):
         line.label = dataset
         artist.append(line)
         label.append(dataset)
-    legend(artist, label)
+    plt.legend(artist, label)
     plt.ylabel('seconds')
     plt.show()
 
