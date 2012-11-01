@@ -102,7 +102,7 @@ def measure_read(samples):
 
 
 def measure_write(tmpdir, samples):
-    filenames = [mktemp(tmpdir=tmpdir) for i in range(samples)]
+    filenames = [mktemp(dir=tmpdir) for i in range(samples)]
     times = []
     for filename in filenames:
         before = time()
@@ -250,7 +250,7 @@ def benchmark(load, jail):
     blockingCallFromThread(reactor, load.start, benchmarkFilesystem=b'root')
     try:
         loaded_read_measurements = measure_read(MEASUREMENTS)
-        loaded_write_measurements = measure_write(MEASUREMENTS)
+        loaded_write_measurements = measure_write(b"/tmp", MEASUREMENTS)
         loaded_write_jail_dir_measurements = measure_write(
             b"/usr/jails/" + jail.name + b"/tmp", MEASUREMENTS)
     finally:
