@@ -43,7 +43,7 @@ elif 'linux' in platform:
 else:
     raise Exception("Don't understand this platform")
 
-WARMUP_MEASUREMENTS = 1000
+WARMUP_MEASUREMENTS = 100
 MEASUREMENTS = WARMUP_MEASUREMENTS * 10
 
 def check_output(popenargs):
@@ -100,8 +100,8 @@ def measure_read(samples):
 
 
 
-def measure_write(samples):
-    filenames = [mktemp() for i in range(samples)]
+def measure_write(tmpdir, samples):
+    filenames = [mktemp(tmpdir=tmpdir) for i in range(samples)]
     times = []
     for filename in filenames:
         before = time()
@@ -236,7 +236,9 @@ def benchmark(load, jail):
 
     print ctime(), "STARTING UNLOADED TEST"
     read_measurements = measure_read(MEASUREMENTS)
-    write_measurements = measure_write(MEASUREMENTS)
+    write_measurements = measure_write(b"/tmp", MEASUREMENTS)
+    write_jail_dir_measurements = measure_write(
+        b"/usr/jails/" + jail.name + b"/tmp", MEASUREMENTS)
     print ctime(), "DONE UNLOADED TEST"
 
     print ctime(), "STARTING LOADED TEST"
@@ -245,6 +247,8 @@ def benchmark(load, jail):
     try:
         loaded_read_measurements = measure_read(MEASUREMENTS)
         loaded_write_measurements = measure_write(MEASUREMENTS)
+        loaded_write_jail_dir_measurements = measure_write(
+            b"/usr/jails/" + jail.name + b"/tmp", MEASUREMENTS)
     finally:
         blockingCallFromThread(reactor, load.stop)
 
@@ -274,25 +278,27 @@ def benchmark(load, jail):
         finally:
             blockingCallFromThread(reactor, jail.stop)
 
-    print 'mean unloaded read time', milli(mean(read_measurements[WARMUP_MEASUREMENTS:]))
-    print 'mean unloaded write time', milli(mean(write_measurements[WARMUP_MEASUREMENTS:]))
+    print 'mean unloaded read time', milli(mean(read_measurements))
+    print 'mean unloaded write time', milli(mean(write_measurements))
 
-    print 'mean loaded read time', milli(mean(loaded_read_measurements[WARMUP_MEASUREMENTS:]))
-    print 'mean loaded write time', milli(mean(loaded_write_measurements[WARMUP_MEASUREMENTS:]))
+    print 'mean loaded read time', milli(mean(loaded_read_measurements))
+    print 'mean loaded write time', milli(mean(loaded_write_measurements))
 
-    print 'mean unloaded jail read time', milli(mean(jail_read_measurements[WARMUP_MEASUREMENTS:]))
-    print 'mean unloaded jail write time', milli(mean(jail_write_measurements[WARMUP_MEASUREMENTS:]))
+    print 'mean unloaded jail read time', milli(mean(jail_read_measurements))
+    print 'mean unloaded jail write time', milli(mean(jail_write_measurements))
 
-    print 'mean loaded jail read time', milli(mean(loaded_jail_read_measurements[WARMUP_MEASUREMENTS:]))
-    print 'mean loaded jail write time', milli(mean(loaded_jail_write_measurements[WARMUP_MEASUREMENTS:]))
+    print 'mean loaded jail read time', milli(mean(loaded_jail_read_measurements))
+    print 'mean loaded jail write time', milli(mean(loaded_jail_write_measurements))
 
     return dict(
         read_measurements=read_measurements,
         write_measurements=write_measurements,
+        write_jail_dir_measurements=write_jail_dir_measurements,
         jail_read_measurements=jail_read_measurements,
         jail_write_measurements=jail_write_measurements,
         loaded_read_measurements=loaded_read_measurements,
         loaded_write_measurements=loaded_write_measurements,
+        loaded_write_jail_dir_measurements=loaded_write_jail_dir_measurements,
         loaded_jail_read_measurements=loaded_jail_read_measurements,
         loaded_jail_write_measurements=loaded_jail_write_measurements)
 
