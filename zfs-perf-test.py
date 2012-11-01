@@ -5,6 +5,7 @@ from __future__ import division, unicode_literals, absolute_import
 
 import os.path
 from sys import stdout, argv, platform
+import gc
 
 from random import randrange
 from time import time, ctime
@@ -125,8 +126,7 @@ def measure_read_jail(jail_id, samples):
     output = check_output([
             JEXEC, jail_id, PYTHON, b"-c",
             b"def measure():\n"
-            b"    import sys, os, time\n"
-            b"    stat = os.stat\n"
+            b"    import sys, time\n"
             b"    times = []\n"
             b"    for fName in sys.argv[1:]:\n"
             b"        before = time.time()\n"
@@ -134,6 +134,8 @@ def measure_read_jail(jail_id, samples):
             b"        after = time.time()\n"
             b"        times.append(after - before)\n"
             b"    print times\n"
+            b"import gc\n"
+            b"gc.disable()\n"
             b"measure()\n"] + FILES)
     return eval(output)
 
@@ -151,6 +153,8 @@ def measure_write_jail(jail_id, samples):
             b"        after = time.time()\n"
             b"        times.append(after - before)\n"
             b"    print times\n"
+            b"import gc\n"
+            b"gc.disable()\n"
             b"measure()\n"] + [mktemp() for i in range(samples)])
     return eval(output)
 
@@ -304,4 +308,5 @@ def benchmark(load, jail):
 
 
 if __name__ == '__main__':
+    gc.disable()
     main(argv[1:])
