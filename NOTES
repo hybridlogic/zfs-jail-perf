@@ -1,0 +1,2 @@
+* Try manually reproducing performance problems again, compare those steps to what benchmarks are doing
+* Include nullfs mounts in jail to be able to measure read performance from them (reflects actual setup of jails in cluster)
