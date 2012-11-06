@@ -44,7 +44,7 @@ elif 'linux' in platform:
 else:
     raise Exception("Don't understand this platform")
 
-WARMUP_MEASUREMENTS = 100
+WARMUP_MEASUREMENTS = 1000
 MEASUREMENTS = WARMUP_MEASUREMENTS * 10
 
 def check_output(popenargs):
