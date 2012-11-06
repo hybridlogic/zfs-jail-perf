@@ -116,6 +116,9 @@ class BaseLoad(object):
         pattern = (
             b"she slit the sheet the sheet she slit and on the slitted sheet "
             b"she sits.") * 64
+        path = "%s/%s" % (self.root, filesystem)
+        if not os.path.exists(path):
+            os.mkdir(path)
         for i in range(CHANGE_FILES_COUNT):
             fObj = open(b"%s/%s/data.%d" % (self.root, filesystem, i), "w")
             fObj.write(pattern)
