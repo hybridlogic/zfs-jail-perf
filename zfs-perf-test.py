@@ -116,7 +116,13 @@ def measure_write(tmpdir, samples):
 def measure_read_jail(jail_id, samples):
     output = check_output([
             JLS, b"-j", jail_id, b"-h"])
-    path = output.splitlines()[1].split()[8]
+    import pprint
+    parts = output.splitlines()[1].split()
+    pprint.pprint(list(enumerate(parts)))
+    path = parts[8]
+    if not os.path.exists(path):
+        # FreeBSD 9-ism
+        path = parts[9]
     FILES = []
     for x in range(samples):
         tmpfile = path + b'/' + bytes(x)
