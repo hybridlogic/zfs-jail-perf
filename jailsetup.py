@@ -12,6 +12,11 @@ ZPOOL = 'hpool'
 ZFS = '%s/%s' % (ZPOOL, JAIL_NAME)
 FS_MOUNT_BASE = '/usr'
 
+EZJAIL = '/usr/local/etc/rc.d/ezjail.sh'
+if not os.path.exists(EZJAIL):
+    # New ezjail compat
+    EZJAIL = '/usr/local/etc/rc.d/ezjail'
+
 def check_zfs(fsname):
     lines, status = run_return("zfs list %s" % (fsname,))
     return not lines[0].startswith('cannot open')
@@ -45,7 +50,7 @@ def initial_setup(name):
 
 
 def start_jail(name):
-    os.system("/usr/local/etc/rc.d/ezjail.sh onestart %s" % (name,))
+    os.system("%s onestart %s" % (EZJAIL, name))
     jails, status = run_return("jls -h -q")
     for info in jails:
         parts = shlex.split(info)
