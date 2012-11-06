@@ -54,7 +54,7 @@ def start_jail(name):
     jails, status = run_return("jls -h -q")
     for info in jails:
         parts = shlex.split(info)
-        if parts[23] == name:
+        if parts[23] == name or parts[24] == name:
             return parts[5]
     raise Exception("Could not determine jail id")
 
